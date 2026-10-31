@@ -10,7 +10,7 @@
 
 flash-linear-attention-npu 算子库由天津大学主导开发，是一个面向昇腾架构的高性能线性注意力算子库，对标 Flash-Linear-Attention 项目，旨在为昇腾平台提供高效的线性注意力计算实现。
 
-本仓不自动安装 `torch`、`torch_npu`、`torchnpugen`、`triton-ascend`，这些包必须与 CANN 与 Python 版本匹配，需要使用者按环境自行安装；版本不匹配时，构建或运行会报错。依赖匹配关系与检查方式见下文 Step 1 / Step 2。
+所有 AscendC 算子统一通过 Stable ABI 调用。wheel 声明 `torch>=2.7.1`、`torch_npu>=2.7.1` 运行时依赖；源码构建不自动安装框架，使用 `--no-deps` 安装 wheel 时也需自行准备与 CANN/Python 配套的 torch、torch_npu 和 triton-ascend。Stable launcher 构建仍需要 torch 的链接库；不需要 torchnpugen 或 legacy 扩展。依赖匹配关系与检查方式见下文 Step 1 / Step 2。
 
 ## ⚡️快速上手
 
@@ -83,34 +83,7 @@ python scripts/check_packaged_wheel_api.py
 bash tests/atk/run_test_cpu.sh -op=<算子名> -npu_device_id=0
 ```
 
-`-op` 可选值（即 `tests/atk` 下的算子目录名）：
-
-- `causal_conv1d`
-- `causal_conv1d_bwd`
-- `chunk_bwd_dqkwg`
-- `chunk_bwd_dv_local`
-- `chunk_fwd_h`
-- `chunk_fwd_o`
-- `chunk_gated_delta_rule_bwd`
-- `chunk_gated_delta_rule_bwd_dhu`
-- `chunk_gated_delta_rule_bwd_finalize`
-- `chunk_gated_delta_rule_fwd`
-- `chunk_gated_delta_rule_fwd_h`
-- `chunk_gated_delta_rule_fwd_prepare`
-- `chunk_gdn_bwd_intra`
-- `chunk_kda_bwd_recompute`
-- `chunk_kda_fwd`
-- `chunk_kda_fwd_finalize`
-- `chunk_kda_fwd_prepare`
-- `chunk_local_cumsum`
-- `chunk_scaled_dot_kkt`
-- `prepare_wy_repr_bwd`
-- `prepare_wy_repr_bwd_da`
-- `prepare_wy_repr_bwd_full`
-- `recompute_w_u_fwd`
-- `recurrent_gated_delta_rule`
-- `recurrent_kda`
-- `solve_tri`
+`-op` 使用 `tests/atk` 下的测试工程目录名；算子工程名及 ATK 使用说明见 [算子概览](docs/op_list.md#atk-op-options)。
 
 ## 开发者指引
 
@@ -123,6 +96,7 @@ bash tests/atk/run_test_cpu.sh -op=<算子名> -npu_device_id=0
 
 ## 维护文档
 
+- 算子介绍、API 索引及弃用备注见 [算子概览](docs/op_list.md)。
 - NPU CI 维护说明见 [`docs/Fla-npu仓CI部署教程.md`](docs/Fla-npu仓CI部署教程.md)。
 - 旧版本用户升级与兼容迁移见 [`docs/兼容与迁移指南.md`](docs/兼容与迁移指南.md)。
 - 开发者分场景指南见 [`docs/开发者指南.md`](docs/开发者指南.md)。
