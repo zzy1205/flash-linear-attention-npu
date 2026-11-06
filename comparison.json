@@ -1,0 +1,288 @@
+{
+  "source_pr": 446,
+  "source_commit": "103490da248c81b6a77824fc13c153ad3a0931d2",
+  "target_pr": 1097,
+  "target_commit": "7cc59a77ebd3671cfa28c3035c0784830cdb7e9a",
+  "comparison": "Map operator directory and adapter paths; normalize CRLF/LF only; do not ignore whitespace or comments.",
+  "paired_files": 31,
+  "unchanged": 19,
+  "modified": 12,
+  "new_files_in_operator_and_atk_directories": [
+    "experimental/fused_recurrent_rwkv8/docs/api.md",
+    "experimental/fused_recurrent_rwkv8/docs/design.md",
+    "experimental/fused_recurrent_rwkv8/docs/validation.md",
+    "experimental/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_limits.h",
+    "experimental/fused_recurrent_rwkv8/tests/pta/test_cpu_golden.py",
+    "experimental/fused_recurrent_rwkv8/tests/test_chunk_len_limits.cpp",
+    "tests/atk/fused_recurrent_rwkv8/source-provenance.json"
+  ],
+  "pairs": [
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/CMakeLists.txt",
+      "target_path": "experimental/fused_recurrent_rwkv8/CMakeLists.txt",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "7f866434cef603ddf04ee406c732536ed327cf42bdf7d543f3090925ff3446c2",
+      "target_sha256": "7f866434cef603ddf04ee406c732536ed327cf42bdf7d543f3090925ff3446c2"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/README.md",
+      "target_path": "experimental/fused_recurrent_rwkv8/README.md",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "7e042081ce015e10482b55fac1350dbfe7b237e5e24b09f4c575ef416e2c9ad9",
+      "target_sha256": "93526b7090ac7b1d1033291810fdae6bd209421e9b836ff6f6129ad68a7373cd"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/docs/aclnnFusedRecurrentRwkv8.md",
+      "target_path": "experimental/fused_recurrent_rwkv8/docs/aclnnFusedRecurrentRwkv8.md",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "a427ad8ad39b8cf66304d92ea8158dd61e22a2672001af2f428bf932f194e6b8",
+      "target_sha256": "0fe4535f8c7b808155514cd1bc9a67802739fde095dcb581b5a1963e8d0b4c76"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/examples/check_npu_vs_reference.py",
+      "target_path": "experimental/fused_recurrent_rwkv8/examples/check_npu_vs_reference.py",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "63d7b70dc080aa12f7e4bbc8cc1c1ba2f04707dc2e8abd5359a074d0c1ccde9f",
+      "target_sha256": "8d18e4906b221844366ac4959683763a2102fd9d61989d7c87f683308804ee32"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/examples/test_aclnn_fused_recurrent_rwkv8.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/examples/test_aclnn_fused_recurrent_rwkv8.cpp",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "7681a898e9430c3e8a6dc8950bb2977366fc157c19cbd4ce014bb185ef96d2d5",
+      "target_sha256": "7681a898e9430c3e8a6dc8950bb2977366fc157c19cbd4ce014bb185ef96d2d5"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/CMakeLists.txt",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/CMakeLists.txt",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "3f72a5dc70aa2b5da4000fc4db8bb2d15dd7115a8796a773f87fcbd9327e8e16",
+      "target_sha256": "3f72a5dc70aa2b5da4000fc4db8bb2d15dd7115a8796a773f87fcbd9327e8e16"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_def.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_def.cpp",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "e8a768bf6e994ef59732748cd35f6de674678d6529ec03053b7f0b71ab3c0e73",
+      "target_sha256": "b6cec98ee651e10bb697d0f42e3436dad9295194eaa5226e94f0f28481fe8313"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_infershape.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_infershape.cpp",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "24c83a649d49952a86782fa3cd941f9942a824fdf6ac738f31b7167466141a97",
+      "target_sha256": "24c83a649d49952a86782fa3cd941f9942a824fdf6ac738f31b7167466141a97"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_tiling.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_tiling.cpp",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "b2343f6d58c579cd54583f59fe262258b2f211e1d5c398a669ee384e606c9918",
+      "target_sha256": "c11eb2b28a80647053847ebcc7396f182ac2ff7be582d0a91b2ed0d9b18e1af9"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_tiling.h",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/fused_recurrent_rwkv8_tiling.h",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "53fca2ad7372eab4df522cc22315b99964e88164b7bed7a6201049930154a80c",
+      "target_sha256": "53fca2ad7372eab4df522cc22315b99964e88164b7bed7a6201049930154a80c"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/op_api/aclnn_fused_recurrent_rwkv8.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/op_api/aclnn_fused_recurrent_rwkv8.cpp",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "5b682f3f99a24c3738170b390d55a180a94a61ee6c8723370b8f674a787d20ab",
+      "target_sha256": "d7eb7d212c7f3b6d8c301bc693bffac16746cb1521df9e7cfebb162f2746b09c"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/op_api/aclnn_fused_recurrent_rwkv8.h",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/op_api/aclnn_fused_recurrent_rwkv8.h",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "39d2471a6fafc4483034ea5555fb61139e826f9d7720bdf8c7ef7850a9ef001f",
+      "target_sha256": "f7829fd2a5bf1293a23adac45f53d3568844636a8999ec1c744dd0afa07aef00"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/op_api/fused_recurrent_rwkv8.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/op_api/fused_recurrent_rwkv8.cpp",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "39cbb0ab7891fe3a3e4509be4086c36848cde13e63f03395943caaf84e0f4430",
+      "target_sha256": "39cbb0ab7891fe3a3e4509be4086c36848cde13e63f03395943caaf84e0f4430"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_host/op_api/fused_recurrent_rwkv8.h",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_host/op_api/fused_recurrent_rwkv8.h",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "191b7490560d1c040cc0c13a75c80ec36af6c85feba38b397690a1fa44b1a57d",
+      "target_sha256": "191b7490560d1c040cc0c13a75c80ec36af6c85feba38b397690a1fa44b1a57d"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8.cpp",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "465f03919a62c383362c719350420ced3592983dd4c2ce5fddbf4db239835164",
+      "target_sha256": "2d216d28f34ee126732d8a27018e5c7f0cfcfbdc9450bfa47a520e44b6225e3d"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8_struct.h",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8_struct.h",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "a95e20ec087ea35aed7ab4261cca1df0bf954e7e778eb8933214d1e160fe7c71",
+      "target_sha256": "a95e20ec087ea35aed7ab4261cca1df0bf954e7e778eb8933214d1e160fe7c71"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8_tiling_data.h",
+      "target_path": "experimental/fused_recurrent_rwkv8/op_kernel/fused_recurrent_rwkv8_tiling_data.h",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "2b098d0c58e2639c0613292399879c35429c2ca8b1f448cdffc1134b11669b0b",
+      "target_sha256": "2b098d0c58e2639c0613292399879c35429c2ca8b1f448cdffc1134b11669b0b"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/cases.py",
+      "target_path": "experimental/fused_recurrent_rwkv8/tests/cases.py",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "6a9c2ef82ebe3df26a500757984d7b9b9dec86681fcd15373666ee7308aeb95b",
+      "target_sha256": "6a9c2ef82ebe3df26a500757984d7b9b9dec86681fcd15373666ee7308aeb95b"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/golden.py",
+      "target_path": "experimental/fused_recurrent_rwkv8/tests/pta/golden.py",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "dc495a807801ef47451a954e631e86a7a06be2c764e89e74943131c0e5cb22cb",
+      "target_sha256": "dc495a807801ef47451a954e631e86a7a06be2c764e89e74943131c0e5cb22cb"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/test_accuracy.py",
+      "target_path": "experimental/fused_recurrent_rwkv8/tests/pta/test_accuracy.py",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "5bcd41bd76b6013bbb9a6d76352c7ba7b1d667d54fa4216ca8b70a57d0bd049e",
+      "target_sha256": "a2c4c519429c5103f4838c7b5189a18cbee29699f8f4396c35b7bf173821ceee"
+    },
+    {
+      "source_path": "experiment/fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/utils.py",
+      "target_path": "experimental/fused_recurrent_rwkv8/tests/pta/utils.py",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "e09ecf5fdcc92b235ab0c8ba027416422b79eac202817f406acb9cdfc6dd6861",
+      "target_sha256": "e09ecf5fdcc92b235ab0c8ba027416422b79eac202817f406acb9cdfc6dd6861"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/README.md",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/README.md",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "d898fcd6ad43d1d871d21f831534c3e8123d0285c0eb7c2fb8271f25f17ac5f2",
+      "target_sha256": "c2aecf05e336f0abc81e273b57228dec1355886881515ed37615c45100de177c"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8.json",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8.json",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "a1abb7cfeddb17be2277bfe1e1300fde6ccb548150939147a3a6f11e2a19d1a7",
+      "target_sha256": "a1abb7cfeddb17be2277bfe1e1300fde6ccb548150939147a3a6f11e2a19d1a7"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8_mss.json",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8_mss.json",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "34e3302f82b3146d9bbf23e8225d482c6f97b9f806ae27bf0a28a6894b33efe9",
+      "target_sha256": "34e3302f82b3146d9bbf23e8225d482c6f97b9f806ae27bf0a28a6894b33efe9"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8_perf.json",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/atk_fused_recurrent_rwkv8_perf.json",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "71d69b322402c61789924b621b3faa655ed6e8c32512c002057619e492b36e94",
+      "target_sha256": "71d69b322402c61789924b621b3faa655ed6e8c32512c002057619e492b36e94"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/executor_fused_recurrent_rwkv8.py",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/executor_fused_recurrent_rwkv8.py",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "34804c2dd4f4e8f8b4f52e5aaca7da9d36252b9a020bbf3b95f3dabc7debcf6b",
+      "target_sha256": "9e7fd111d89bf4c8065543d4c4e75f9913d8b7b008143c7ed5d56ff08fe168df"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/fused_recurrent_rwkv8.yaml",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/fused_recurrent_rwkv8.yaml",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "5fa6367a83f51263c025f59d2b47b6fd773de17a0ac48095f4988356f9bd14ec",
+      "target_sha256": "5fa6367a83f51263c025f59d2b47b6fd773de17a0ac48095f4988356f9bd14ec"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/gen_fused_recurrent_rwkv8.py",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/gen_fused_recurrent_rwkv8.py",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "0401548de76fef9e0bc18d7f9e8ca774092e1faa79477fbd98ae1cfc9d175e39",
+      "target_sha256": "0401548de76fef9e0bc18d7f9e8ca774092e1faa79477fbd98ae1cfc9d175e39"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/scripts/.gitkeep",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/scripts/.gitkeep",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "target_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source_path": "tests/atk/fused_recurrent_rwkv8/scripts/build_acceptance_cases.py",
+      "target_path": "tests/atk/fused_recurrent_rwkv8/scripts/build_acceptance_cases.py",
+      "status": "unchanged",
+      "raw_equal": true,
+      "source_sha256": "595c54073967e9046e2e0b57c00b670c8b361b0107eb75f878ce7e2dff4d5ef3",
+      "target_sha256": "595c54073967e9046e2e0b57c00b670c8b361b0107eb75f878ce7e2dff4d5ef3"
+    },
+    {
+      "source_path": "torch_custom/fla_npu/csrc/src/stable_fused_recurrent_rwkv8.cpp",
+      "target_path": "experimental/fused_recurrent_rwkv8/adapter/stable_fused_recurrent_rwkv8.cpp",
+      "status": "modified",
+      "raw_equal": false,
+      "source_sha256": "ed17eee41cca0794f4764a7aeeead088526c4ac6d98c4d70dad6b5196bd33f93",
+      "target_sha256": "0bc1c1c7fc8bcd3cb6ff8a422227f37e299dbb3c4208656a1df34c5ff486f441"
+    }
+  ],
+  "python_function_comparisons": [
+    {
+      "source_path": "torch_custom/fla_npu/fla_npu/ops/ascendc/_stable.py",
+      "source_line": 2139,
+      "target_path": "experimental/_python/fla_npu_experimental/_rwkv8.py",
+      "target_line": 16,
+      "review_path": "review_function_excerpts/stable_to_experimental.py"
+    },
+    {
+      "source_path": "torch_custom/fla_npu/fla_npu/ops/ascendc/_aclnn_ctypes.py",
+      "source_line": 5094,
+      "target_path": "experimental/_python/fla_npu_experimental/_rwkv8.py",
+      "target_line": 16,
+      "review_path": "review_function_excerpts/aclnn_ctypes_to_experimental.py"
+    }
+  ],
+  "purpose": "仅供 GitHub diff 检视的路径对齐快照；不用于编译、安装或合入。正式 PR #1097 的代码和提交不变。",
+  "scope": "31 个对应的 RWKV8/adapter/ATK 文件（19 个未变、12 个修改），7 个新增算子资产，2 组 Python 包装函数摘录。experimental 通用框架在 PR #1097 第一笔提交单独评审。",
+  "normalization": "仅统一 CRLF/LF；原路径映射和原文件 SHA256 见 pairs；函数摘录用 AST 取原始源码片段，未重排或格式化。"
+}
