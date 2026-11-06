@@ -1,4 +1,21 @@
-# FusedRecurrentRwkv8 ATK 工程
+# FusedRecurrentRwkv8 experimental ATK 工程
+
+> 当前状态：从 PR #446 `103490da248c81b6a77824fc13c153ad3a0931d2` 迁入，
+> DUT 改为 `fla_npu_experimental.fused_recurrent_rwkv8`，增加返回槽位/shape/dtype/device 检查；CPU 标杆、造数和原 JSON 保持不变。
+> 下文“来源 PR 历史实测记录”不计入本轮通过数。2026-11-03 A2 单算子 wheel 已通过 209/209 精度用例，
+> 全量 wheel 的默认队列/inline 各通过 3/3 子集用例；未运行确定性、内存或性能矩阵。
+> 环境为 910B2 / CANN 9.0.0 / torch 2.12.0+cpu / torch_npu 2.12.0 / ATK 26.9.8。
+> 证据见 [A2 验证记录](../../../experimental/validation-a2-20261103.md)，加载隔离与阶段覆盖见
+> [A2 验证方案](../../../experimental/_tests/a2_isolation/README.md)。
+> 移除框架样例后的新制品回归见 [2026-11-06 记录](../../../experimental/validation-rwkv-only-20261106.md)，
+> 历史 209 条结果不计为本轮重跑。
+>
+> ATK 及其 worker 可能先导入 torch_npu。应在专用测试虚拟环境中配置启动前的实验 bootstrap
+> （该方案中的准备步骤），不能删除实验 loader 的初始化顺序校验来绕过它。
+> 用 `FLA_NPU_ENV` 显式指定本 wheel 的实验 vendor `set_env.bash`，防止统一入口重设为正式 OPP。
+>
+> 原 209 条精度用例没有 reverse 属性，不能算作 reverse 覆盖；只有最后 9 条明确按 3 seeds
+> 组织。新增逻辑分支须按当前 ATK 规范补齐每分支 3 个种子和校准记录，才可完成正式验收。
 
 本目录提供 `fused_recurrent_rwkv8`（RWKV-v8 WKV7 逐 token 递推前向）的 ATK 单算子工程，
 包含 `executor_fused_recurrent_rwkv8.py`、`gen_fused_recurrent_rwkv8.py`、
@@ -18,7 +35,7 @@
 ## 标杆来源
 
 CPU 标杆内嵌在 `executor_fused_recurrent_rwkv8.py`（ATK 规范：executor 自包含），
-与 `fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/golden.py` 是同一份逻辑的
+与 `experimental/fused_recurrent_rwkv8/tests/pta/golden.py` 是同一份逻辑的
 两份拷贝——**修改金标算法时两处必须同步**。语义锚点：BlinkDL/RWKV-LM @ 9521024
 `RWKV-v8/cuda/wkv7_cuda.cu forward_kernel`；精度对拍锚点：fla @ a4a2624b DPLR。
 
@@ -74,7 +91,7 @@ bash tests/atk/run_test_cpu.sh -op=fused_recurrent_rwkv8 -scope=gen_cases
 `gen_cases` 默认传入 `-dt 100 -en 0`。所有新增工程的 marker dtype 都保留两路生成入口，
 生成器会把不支持 FP16 的算子改回合法 BF16 用例。
 
-## 实测记录
+## 来源 PR 历史实测记录
 
 | 日期 | 精度 | 确定性 | 内存 | 性能 |
 |---|---|---|---|---|

@@ -16,9 +16,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[6]
-sys.path.insert(0, str(REPO_ROOT / "fla" / "ops" / "ascendc" / "rwkv8"
-                         / "fused_recurrent_rwkv8" / "tests" / "pta"))
+OP_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(OP_ROOT / "tests" / "pta"))
 
 from golden import fused_recurrent_rwkv8_golden as fused_recurrent_rwkv8_reference  # noqa: E402
 

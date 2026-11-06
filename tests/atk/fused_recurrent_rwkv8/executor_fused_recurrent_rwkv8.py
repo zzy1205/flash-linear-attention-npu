@@ -2,7 +2,7 @@
 
 输入生成、CPU 标杆、run_cpu、run_npu 和 FunctionApi 都放在本算子目录中。
 CPU 标杆内嵌在本文件中（ATK 规范：executor 自包含，不跨目录 import 金标）；
-它与 fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/golden.py 是同一份
+它与 experimental/fused_recurrent_rwkv8/tests/pta/golden.py 是同一份
 逻辑的两份拷贝——修改金标算法时两处必须同步。
 
 递推公式（per head，state (V,K)，RWKV 朝向：行 = v/q 侧，列 = k/z 侧）：
@@ -18,6 +18,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
+
+from fla_npu_experimental import fused_recurrent_rwkv8
 
 import torch
 
@@ -168,9 +170,7 @@ def run_cpu(spec: dict[str, Any], high_precision: bool = False):
 def run_npu(spec: dict[str, Any], input_data: InputDataset):
     """运行 NPU DUT。"""
     inputs = _rwkv8_inputs(spec, _marker_device(input_data), high_precision=False)
-    from fla_npu.ops import ascendc
-
-    return ascendc.fused_recurrent_rwkv8(
+    outputs = fused_recurrent_rwkv8(
         inputs["q"], inputs["w"], inputs["k"], inputs["v"], inputs["z"], inputs["b"],
         scale=inputs["scale"],
         initial_state=inputs["initial_state"],
@@ -178,6 +178,26 @@ def run_npu(spec: dict[str, Any], input_data: InputDataset):
         output_sa=inputs["output_sa"],
         chunk_len=inputs["chunk_len"],
     )
+    # ATK's shared formatter filters None. Check the public three-slot contract
+    # before formatting so a missing optional tensor cannot silently disappear.
+    if not isinstance(outputs, (tuple, list)) or len(outputs) != 3:
+        raise AssertionError("RWKV8 must return exactly (o, s, sa)")
+    B, H, T, K = inputs["q"].shape
+    V = inputs["v"].shape[-1]
+    expected = [((B, H, T, V), inputs["q"].dtype),
+                ((B, H, T // inputs["chunk_len"], K, V), torch.float32)
+                if inputs["output_chunk_state"] else None,
+                ((B, H, T, V), torch.float32) if inputs["output_sa"] else None]
+    for name, output, contract in zip(("o", "s", "sa"), outputs, expected):
+        if contract is None:
+            if output is not None:
+                raise AssertionError(f"Disabled output {name} must be None")
+        elif (not isinstance(output, torch.Tensor) or tuple(output.shape) != contract[0]
+              or output.dtype != contract[1] or output.device != inputs["q"].device):
+            raise AssertionError(f"Output {name} violates shape/dtype/device contract {contract}")
+    from experimental_isolation_trace import record_experimental_execution
+    record_experimental_execution(inputs["q"].device)
+    return outputs
 
 
 @register("executor_fused_recurrent_rwkv8")

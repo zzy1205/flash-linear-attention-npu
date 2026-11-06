@@ -4,6 +4,7 @@
  */
 #include "aclnn_fused_recurrent_rwkv8.h"
 #include "fused_recurrent_rwkv8.h"
+#include "../fused_recurrent_rwkv8_limits.h"
 
 #include "securec.h"
 #include "aclnn_kernels/common/op_error_check.h"
@@ -183,7 +184,8 @@ static aclnnStatus CheckShapeValid(const FusedRecurrentRwkv8Params &params)
 static aclnnStatus CheckParams(const FusedRecurrentRwkv8Params &params)
 {
     CHECK_RET(CheckNotNull(params), ACLNN_ERR_PARAM_INVALID);
-    CHECK_COND(params.chunkLen >= 1, ACLNN_ERR_PARAM_INVALID, "chunkLen must be >= 1.");
+    CHECK_COND(FusedRecurrentRwkv8::IsValidChunkLen(params.chunkLen), ACLNN_ERR_PARAM_INVALID,
+               "chunk_len must be in [1, 4294967295].");
     CHECK_RET(CheckDtypeValid(params), ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(CheckShapeValid(params) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID);
     return ACLNN_SUCCESS;

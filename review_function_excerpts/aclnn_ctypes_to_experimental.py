@@ -1,4 +1,4 @@
-def npu_fused_recurrent_rwkv8(
+def fused_recurrent_rwkv8(
     q,
     w,
     k,
@@ -26,10 +26,15 @@ def npu_fused_recurrent_rwkv8(
     否则为 None）；sa 为每 token 更新前的 state@z，(B,H,T,V) fp32
     （output_sa=True 时产出，否则为 None）。
     """
+    validate_active_environment()
     import torch
 
     allowed_dtypes = {torch.float16, torch.bfloat16, torch.float32}
     tensors = {"q": q, "w": w, "k": k, "v": v, "z": z, "b": b}
+    for name, tensor in tensors.items():
+        ensure_npu_tensor(tensor, name)
+    if initial_state is not None:
+        ensure_npu_tensor(initial_state, "initial_state")
     shapes = {name: _shape(tensor) for name, tensor in tensors.items()}
     for name, tensor in tensors.items():
         if len(shapes[name]) != 4:
@@ -47,15 +52,13 @@ def npu_fused_recurrent_rwkv8(
     if v_shape[:3] != (batch, heads, seqlen):
         raise RuntimeError("npu_fused_recurrent_rwkv8: v must be (B,H,T,V) with the same B/H/T as q.")
     v_dim = v_shape[3]
-    if k_dim % 8 or k_dim > 128 or v_dim % 8 or v_dim > 128:
+    if k_dim <= 0 or v_dim <= 0 or k_dim % 8 or k_dim > 128 or v_dim % 8 or v_dim > 128:
         raise RuntimeError("npu_fused_recurrent_rwkv8: K/V must be multiples of 8 and <= 128.")
 
     reverse = _optional_bool(reverse, False)
     output_chunk_state = _optional_bool(output_chunk_state, False)
     output_sa = _optional_bool(output_sa, False)
-    chunk_len = int(chunk_len)
-    if chunk_len < 1:
-        raise RuntimeError("npu_fused_recurrent_rwkv8: chunk_len must be >= 1.")
+    chunk_len = validate_chunk_len(chunk_len)
 
     if initial_state is not None:
         if _shape(initial_state) != (batch, heads, k_dim, v_dim):
@@ -63,36 +66,7 @@ def npu_fused_recurrent_rwkv8(
         if initial_state.dtype != torch.float32:
             raise RuntimeError("npu_fused_recurrent_rwkv8: initial_state must be float32.")
 
-    out = _empty((batch, heads, seqlen, v_dim), q)
-    # T < chunk_len 时快照数 NT=0：aclnn 要求 sOut 真实 shape (B,H,0,K,V)，
-    # 占位只能落在 storage 层——给底层多分配 1 行（避免 0 字节分配的空指针），
-    # 传 aclnn 与返回的都是 [:, :, :NT] 视图（手法同 C++ example 的 buffer 占位）。
-    num_chunks = seqlen // chunk_len
-    s = None
-    if output_chunk_state:
-        s = _empty((batch, heads, max(num_chunks, 1), k_dim, v_dim), q, dtype=torch.float32)[:, :, :num_chunks]
-    sa = _empty((batch, heads, seqlen, v_dim), q, dtype=torch.float32) if output_sa else None
-
-    outputs = tuple(tensor for tensor in (out, s, sa) if tensor is not None)
-    _call_aclnn(
-        "aclnnFusedRecurrentRwkv8",
-        lambda ctx: [
-            ctx.tensor(q, "q"),
-            ctx.tensor(w, "w"),
-            ctx.tensor(k, "k"),
-            ctx.tensor(v, "v"),
-            ctx.tensor(z, "z"),
-            ctx.tensor(b, "b"),
-            ctx.tensor(initial_state, "initial_state"),
-            ctypes.c_float(float(scale)),
-            ctypes.c_bool(reverse),
-            ctypes.c_bool(output_chunk_state),
-            ctypes.c_bool(output_sa),
-            ctypes.c_int64(chunk_len),
-            ctx.tensor(out, "out"),
-            ctx.tensor(s, "s"),
-            ctx.tensor(sa, "sa"),
-        ],
-        outputs,
-    )
-    return out, s, sa
+    from ._stable import invoke
+    return invoke("npu_fused_recurrent_rwkv8", q,
+                  (q, w, k, v, z, b, initial_state, float(scale), reverse,
+                   output_chunk_state, output_sa, chunk_len))
