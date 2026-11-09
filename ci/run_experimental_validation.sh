@@ -41,8 +41,21 @@ python3 experimental/_framework/build.py wheel \
 python_root="$(mktemp -d "${tmp_root%/}/fla-experimental-python.XXXXXX")"
 python3 -m pip install --no-deps --target "$python_root" "$wheel_root"/*.whl
 source "$python_root/fla_npu_experimental/opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash"
-PYTHONPATH="$python_root" python3 ci/experimental_load_smoke.py \
+PYTHONPATH="$python_root${PYTHONPATH:+:$PYTHONPATH}" python3 ci/experimental_load_smoke.py \
     | tee build_out/experimental-load-audit.json
+
+# Machine-readable handoff; emit only after every build/host check succeeded.
+python3 - "$install_root" "$wheel_root" <<'PY'
+import json
+from pathlib import Path
+import sys
+wheels = list(Path(sys.argv[2]).glob('*.whl'))
+if len(wheels) != 1:
+    raise SystemExit('Expected exactly one experimental wheel')
+Path('build_out/experimental-products.json').write_text(json.dumps({
+    'opp': sys.argv[1], 'wheel': str(wheels[0]), 'runtime_executed': False,
+}), encoding='utf-8')
+PY
 echo "[experimental] PASS: compilation, isolated installation, ABI, wheel, and host-only loading"
 echo "[experimental] NPU execution, accuracy, and A2 regression: NOT RUN"
 echo "[experimental] Isolated OPP: $install_root"

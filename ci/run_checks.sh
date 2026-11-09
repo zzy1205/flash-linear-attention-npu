@@ -580,6 +580,15 @@ check_wheel_install_layouts() {
     fi
 }
 
+# Keep the existing required status names: the trusted main workflow already
+# invokes this merged-PR script and uploads its stage report.
+run_gdr_and_experimental_st() {
+    run_gdr_example_st
+    FLA_NPU_DISABLE_PTH=1 python3 ci/run_experimental_ci.py --stage-report "$stage_report_file"
+    # Fresh formal processes must still work after experimental installation/loading.
+    run_gdr_example_st
+}
+
 declare -A ci_stage_status=()
 
 update_ci_stage() {
@@ -728,9 +737,9 @@ if [[ "$requested_stage" != "all" ]]; then
 fi
 run_pipeline_stage \
     gdr-example-st \
-    "run all enabled GDR Example/ST accuracy cases" \
+    "GDR Example/ST, experimental validation, and formal regression" \
     "$gdr_example_enabled" \
-    run_gdr_example_st
+    run_gdr_and_experimental_st
 
 stage_report_status=0
 python3 ci/manage_npu_ci_stage_report.py --output "$stage_report_file" finalize || stage_report_status=$?
