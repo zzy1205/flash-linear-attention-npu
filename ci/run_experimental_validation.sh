@@ -19,6 +19,8 @@ if [[ "${CI_EXPERIMENTAL_RUNTIME:-false}" != "false" ]]; then
     exit 2
 fi
 
+python3 ci/check_experimental_environment.py
+
 python3 -m unittest discover -s ci/tests -p 'test_experimental_*.py' -q
 python3 -m unittest discover -s experimental/_python/tests -q
 bash build.sh --pkg --experimental --soc="$soc" --ops="$ops" -j"$jobs"

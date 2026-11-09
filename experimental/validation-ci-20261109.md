@@ -1,5 +1,8 @@
 # experimental CI 接入验证（2026-11-09）
 
+本记录对应原 ATK 调度版本 `4e0c6a2e`。后续已将默认 CI 改为独立 CPU reference 对拍，
+当前方案及无 ATK 镜像结果见 [后续验证记录](validation-reference-ci-20261109.md)。
+
 本次只修改 CI 调度、测试准备、结果检查与文档，未修改 RWKV8 输入、CPU 标杆、精度阈值或
 算子实现。基于 PR #1097 的 `866b858f` 工作树验证；原 framework / RWKV8 两次提交保留。
 

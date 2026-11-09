@@ -80,10 +80,14 @@ CI_SOC=ascend950 CI_EXPERIMENTAL_OPS=fused_recurrent_rwkv8 CI_JOBS=4 \
 该入口执行隔离契约测试、真实编译打包、空目录安装、双清单审计、独立 wheel 构建及 host-only 加载检查，输出 `build_out/experimental-package-audit.json` 和 `experimental-load-audit.json`。它不执行 NPU；历史 A2 功能与隔离结果见 [A2 验证记录](validation-a2-20261103.md)，其中 RWKV8 209 条精度通过，28 项装载隔离通过。历史制品包含现已移除的样例，不能代替清理后的制品验证。
 
 GitHub NPU CI 已通过 `run_checks.sh` 的测试阶段调用 `ci/run_experimental_ci.py`：先执行正式
-GDR，再构建实验全量制品；A2 自动准备独立环境、执行 28 项装载隔离和 RWKV8 ATK 精度
+GDR，再构建实验全量制品；A2 自动准备独立环境、执行 28 项装载隔离和 RWKV8 NPU / CPU reference 直接对拍
 （quick 默认/inline 各 3 条，full 各 209 条）；最后再次执行正式 GDR。A5 只做实验构建和 host
 装载，runtime 明确记录 skipped。任一失败阻断既有 CI 状态，分项结果嵌入现有 stage artifact。
-CI 镜像须提供 ATK 及兼容的 `kombu==5.6.2`，或设置容器内 `CI_EXPERIMENTAL_ATK_WHEEL`；缺依赖不跳过检查。
+依赖预检在正式构建前执行；必要 Python 依赖缺失立即失败，缺 ATK 只 warning。默认 CI 无须 ATK，
+备选 ATK 工程仍可手工复验（ATK 26.9.8 + `kombu==5.6.2`）。对拍复用原 JSON、FP64 CPU 标杆
+和原混合容差阈值；每个输出的误差、阈值和实际库来源写入报告。
 完整调度、依赖和覆盖边界见 [设计文档 §7.1](../docs/architecture/experimental%20构建适配设计.md#71-github-npu-ci-调度与失败边界)。
 本次 A2 构建、装载、精度及 CI 调度实测见 [2026-11-09 验证记录](validation-ci-20261109.md)。
+后续默认改为独立 CPU reference 对拍，无 ATK 镜像实测及当前验证边界见
+[独立对拍验证记录](validation-reference-ci-20261109.md)。
 此接入不表示 reverse、所有 stream/并发、确定性、MSS、性能等完整验收已经完成。

@@ -4,6 +4,7 @@
 CPU 标杆内嵌在本文件中（ATK 规范：executor 自包含，不跨目录 import 金标）；
 它与 experimental/fused_recurrent_rwkv8/tests/pta/golden.py 是同一份
 逻辑的两份拷贝——修改金标算法时两处必须同步。
+CI 独立副本 experimental/_tests/rwkv8_reference.py 也须同步，契约测试检查函数 AST 一致性。
 
 递推公式（per head，state (V,K)，RWKV 朝向：行 = v/q 侧，列 = k/z 侧）：
     sa    = state @ z_t

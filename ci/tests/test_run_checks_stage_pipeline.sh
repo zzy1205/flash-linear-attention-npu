@@ -38,6 +38,11 @@ export CI_TEST_REAL_PYTHON3
 
 python3() {
     local entrypoint="${1:-}"
+    if [[ "${CI_TEST_FAIL_STAGE_ONE:-false}" == "dependencies" && \
+          "$entrypoint" == "ci/check_experimental_environment.py" ]]; then
+        echo "injected required experimental dependency failure" >&2
+        return 27
+    fi
     if [[ "$entrypoint" == "ci/manage_npu_ci_stage_report.py" ]]; then
         if [[ "${CI_TEST_FAIL_MANAGER_INIT:-false}" == "true" && \
               "${*: -1}" == "init" ]]; then
@@ -223,6 +228,12 @@ run_case() {
             return 1
         fi
         grep -Fq '[CI][REPRO] CI_STAGE=opp-package' "$output_log"
+    elif [[ "$name" == "dependency-failure" ]]; then
+        if grep -Eq 'bash ci/prepare_ci_cache.sh|bash build.sh' "$command_log"; then
+            echo "Build ran after a required dependency failed." >&2
+            return 1
+        fi
+        grep -Fq 'injected required experimental dependency failure' "$output_log"
     elif [[ "$name" == "bootstrap-failure" ]]; then
         grep -Fq 'injected stage report initialization failure' "$output_log"
         grep -Fq '[CI][REPRO] CI_STAGE=environment-contracts' "$output_log"
@@ -255,6 +266,14 @@ run_case \
     prerequisite-failure \
     all \
     true \
+    1 \
+    failure \
+    failure,skipped,skipped,skipped,skipped
+
+run_case \
+    dependency-failure \
+    all \
+    dependencies \
     1 \
     failure \
     failure,skipped,skipped,skipped,skipped

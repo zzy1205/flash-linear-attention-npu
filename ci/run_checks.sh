@@ -502,6 +502,8 @@ PY
 }
 
 check_environment_contracts() {
+    FLA_NPU_DISABLE_PTH=1 python3 ci/check_experimental_environment.py --stage-report "$stage_report_file"
+    FLA_NPU_DISABLE_PTH=1 check_example_python_deps
     python3 tests/test_wheel_environment.py -b
     python3 torch_custom/fla_npu/tools/stable_coverage.py --strict
     python3 torch_custom/fla_npu/tools/op_abi_parity.py

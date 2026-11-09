@@ -77,7 +77,27 @@ NPU 节点保持算子原始 dtype。ATK 按 (NPU dtype, golden FP32) 配对选�
 `{"acc": "mixed_tolerance_bm", "mem": 1.1, "perf": "not_key"}`；`fused_recurrent_rwkv8.yaml`
 的 `standard` 为 `{acc: mixed_tolerance_bm, perf: not_key}`。
 
-## 执行方式
+## CI 默认独立对拍
+
+默认 NPU CI 不依赖 ATK。`ci/run_experimental_accuracy.py` 直接比较实验 wheel 的 NPU 输出与
+CPU reference，使用本目录精度 JSON（quick 前 3 条，full 全部 209 条），默认/inline 各执行一次。
+输入与 reference 的独立副本在 `experimental/_tests/rwkv8_reference.py`，契约测试检查其与
+自包含 executor 的 AST 一致性。FP64 递推后转 FP32、输出契约和上述混合容差保持不变。
+依赖在构建前检查，缺 ATK 仅告警；下列 ATK 工程保留为精度复验及确定性/MSS/性能备选。
+独立脚本的实测结果与边界见 [CI 对拍验证记录](../../../experimental/validation-reference-ci-20261109.md)。
+
+在仅安装匹配实验 wheel 的独立环境中，启动新 shell、初始化 CANN 后手工执行：
+
+```bash
+export FLA_NPU_DISABLE_PTH=1 TORCH_DEVICE_BACKEND_AUTOLOAD=0
+E="$(python -c 'import importlib.util; from pathlib import Path; print(Path(importlib.util.find_spec("fla_npu_experimental").origin).parent)')"
+source "$E/opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash"
+python ci/run_experimental_accuracy.py --mode quick --device 0 --output /tmp/rwkv8-queue.json
+FLA_NPU_STABLE_LAUNCH=inline \
+    python ci/run_experimental_accuracy.py --mode full --device 0 --output /tmp/rwkv8-inline.json
+```
+
+## ATK 备选执行方式
 
 ```bash
 bash tests/atk/run_test_cpu.sh -op=fused_recurrent_rwkv8 -npu_device_id=0

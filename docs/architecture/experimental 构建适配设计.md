@@ -251,7 +251,10 @@ wrapper 通过独立 Stable dispatcher 检查输入设备一致性，并使用�
 仅在队列能力可用时取 NoWait stream accessor；inline 使用安全 accessor。
 RWKV8 保留三返回槽位、可选输出及零尺寸状态生命周期，并拒绝越界 `chunk_len`。
 
-### 6.1 ATK worker 的准备
+### 6.1 ATK worker 的准备（备选复验）
+
+默认 CI 使用 `ci/run_experimental_accuracy.py` 直接进行 NPU / CPU reference 对拍，不依赖 ATK。
+ATK 工程保留用于手工精度复验、确定性、MSS 和性能测试；下列 worker 准备只适用于该备选入口。
 
 ATK 不选择 experimental vendor，也不替调用方安装 wheel。`run_test_cpu.sh` 激活 `ATK_ENV`，
 source `CANN_ENV`，再 source `FLA_NPU_ENV`；实验任务必须指向实验 wheel 的 vendor 脚本。
@@ -275,7 +278,7 @@ ATK 及 worker 可能先导入 `torch_npu`。本轮在专用、一次性 ATK 环
 | launcher | `experimental/_framework/build.py`、通用编译器/Runtime | 独立注册、指纹、ELF 门禁、自有符号不回落、队列/stream 生命周期 |
 | Python | `experimental/_python/fla_npu_experimental/` | 设备/参数契约、导入时序、配置冻结、包内来源及混用拒绝 |
 | 装载隔离 | `experimental/_tests/a2_isolation/` | 28 项真实 wheel 矩阵、实际库/注册、保护目录哈希 |
-| 数值/生命周期 | RWKV8 ATK、正式控制算子 | CPU 对拍、输出契约、实际库来源、两种 pip 顺序及安装/卸载回归 |
+| 数值/生命周期 | RWKV8 独立对拍脚本、备选 ATK、正式控制算子 | CPU 对拍、输出契约、实际库来源、两种 pip 顺序及安装/卸载回归 |
 | 正式兼容 | 正式 OFF 构建与 overlay 测试 | 正式能力不受实验开关和制品生命周期影响 |
 
 ```bash
@@ -304,13 +307,14 @@ PR push 自动执行契约单测，NPU CI 仍按仓库规则由授权人发起 q
 ```mermaid
 flowchart TD
     A[main workflow：临时合并 PR] --> B[run_ci_container.sh：选择并锁定设备]
-    B --> C[run_checks.sh：正式环境、OPP、wheel、adapter]
+    B --> P[environment-contracts：依赖预检，缺 ATK 仅 warning]
+    P --> C[正式环境契约、OPP、wheel、adapter]
     C --> D[gdr-example-st：正式 GDR 精度]
     D --> E[run_experimental_ci.py]
     E --> F[run_experimental_validation.sh：全量实验 .run / wheel / ABI / host 装载]
     F --> G{目标 SoC}
     G -->|A2| H[独立 Python 环境：28 项装载隔离与正式目录哈希]
-    H --> I[RWKV8 ATK：默认启动模式与 inline 精度]
+    H --> I[独立脚本：NPU 对拍 CPU reference，默认启动模式与 inline]
     G -->|A5| J[明确记录 runtime skipped：仅构建和 host 验证]
     I --> K[再次运行正式 GDR 精度]
     J --> K
@@ -320,30 +324,50 @@ flowchart TD
 - 完整 quick/full 流程执行实验全量构建；`CI_OPS` 仍只选择正式算子。`CI_STAGE` 截止在测试阶段
   之前的编译诊断不运行实验矩阵，也不能据此宣称实验验收通过。不增加默认关闭的实验开关。
 - A2 quick：RWKV8 原精度 JSON 的前 3 条，默认启动模式和 inline 各 3 条；full：原 209 条各运行
-  一遍。ATK 使用 `npu_dut --backend npu` 与 `cpu_golden --backend cpu`，沿用原输入、CPU 标杆和
-  `mixed_tolerance_bm`，不降低阈值。默认模式是否使用队列取决于 runtime 能力，不把两次精度
+  一遍。`ci/run_experimental_accuracy.py` 直接调用已安装的实验 wheel，NPU 输出与 CPU FP64
+  递推后转 FP32 的标杆对拍。复用原 JSON、输入生成及 `mixed_tolerance_bm` v1 阈值，不降低
+  精度标准。默认模式是否使用队列取决于 runtime 能力，不把两次精度
   通过表述为所有 stream/并发路径验收。
-- 28 项装载矩阵使用全新环境，不继承父环境的正式/实验包或 `.pth`。只有专用 ATK 环境启用实验
-  bootstrap；装载顺序测试不启用。正式 overlay 只作正式路径的控制组，不表示实验支持 overlay。
+- 28 项装载矩阵使用全新环境，不继承父环境的正式/实验包或 `.pth`。直接对拍脚本先导入实验包再导入
+  `torch_npu`；只有备选 ATK 的专用环境启用 bootstrap，装载顺序测试不启用。正式 overlay 只作正式路径的控制组，不表示实验支持 overlay。
 - 当前实验集合只有 RWKV8，全量 wheel 同时用于单算子 profile。新增实验算子后须补选编制品和
   精度清单；CI 对未更新的覆盖配置直接失败，不能静默漏测新算子。
 - A5 运行真实实验编译、安装、ABI、wheel、host 装载，A2 专用 runtime 阶段记录 `skipped` 及原因。
   host 装载或 A5 成功不等于实验 NPU 数值验证成功。
-- 任一构建、依赖、装载、精度或正式后置回归失败均使 `gdr-example-st` 失败；ATK 必须产生报告，
-  实际用例数、通过数必须等于本模式计划数。缺依赖、零用例、短跑、超时和崩溃不能记为成功。
+- 必要依赖缺失在 `environment-contracts` 阶段失败，后续构建不执行；构建、装载、精度或正式
+  后置回归失败使 `gdr-example-st` 失败。独立对拍必须产生完整 JSON 报告，实际用例数和通过数
+  必须等于本模式计划数；零用例、短跑、超时和崩溃不能记为成功。缺 ATK 只 warning，不跳过对拍。
 
-CI 镜像须提供 ATK 及其依赖（已验证 ATK 26.9.8、`kombu==5.6.2`），或用 `CI_EXPERIMENTAL_ATK_WHEEL` 指定容器
-内可访问的 ATK wheel；脚本在专用环境按 `ci/experimental-atk-constraints.txt` 安装依赖，
-离线环境须预装或提供 pip 缓存。Kombu 5.7 会拒绝 ATK 的 worker exchange 名称，因此固定已验证
-版本并在运行前检查。quick/full 的每种启动模式超时分别为 600/7200 秒。
-容器入口透传此变量，wheel 应位于已挂载的仓库/缓存内或镜像内。缺失依赖明确失败，不跳过
-精度检查。实验验证不在全局 Python 环境安装或卸载 FLA 包。
+`ci/check_experimental_environment.py` 在所有正式构建之前检查 `torch`、`torch_npu`、`numpy`、
+`setuptools`、`wheel`、`pip`、`venv` 的真实导入；结果写入既有 stage 报告的
+`experimental_dependencies`。实验总入口及仅构建入口也在编译前预检，因此手工调用同样提前报错。
+正式 Example ST 原有的 Python 依赖检查也前置执行，原 adapter 阶段的复查保留。
+ATK/Kombu 仅记录可用性并告警，默认路径不安装也不调用 ATK。备选 ATK 建议使用已验证的
+26.9.8 + `kombu==5.6.2`（约束见 `ci/experimental-atk-constraints.txt`）。原
+`CI_EXPERIMENTAL_ATK_WHEEL` 自动安装入口移除，备选环境由调用者提前准备。
+quick/full 每种启动模式的进程超时分别为 660/7260 秒。实验验证不在全局 Python 环境安装或卸载 FLA 包。
+
+独立对拍与 ATK executor 的输入生成、CPU reference 保持函数级 AST 一致性检查，避免两份拷贝漂移。
+比较器与 ATK 的对齐测试仅在 `FLA_EXPERIMENTAL_TEST_ATK_PARITY=1` 时启用，不给默认 CI 引入 ATK 依赖。
+输入只在 CPU 生成并量化一次，原 dtype 输入传到 NPU，同值 FP64 输入用于 CPU reference。
+逐个验证 `o/s/sa` 的 shape、dtype、device、可选输出及有限值；`s/sa` 使用 FP32 阈值。
+数值规则固定对齐 ATK 26.9.8 的 `mixed_tolerance_bm` v1（不是 `default`/v2）：
+
+| 输出 dtype | rtol | atol | max_abs_error_limit |
+| --- | --- | --- | --- |
+| FP16 | 1.95e-3 | 1.95e-3 | 0.1 |
+| BF16 | 1.56e-2 | 1.56e-2 | 1.0 |
+| FP32 | 9.77e-4 | 1.53e-5 | 0.01 |
+
+要求 `isclose` 元素比例 ≥ 0.99，且每个元素的绝对误差 ≤ max_abs_error_limit **或** ≤ 32 ULP；
+ULP 以 golden 转为输出 dtype 后朝正无穷的间距计算。合法空输出在形状检查后通过。
+原 PTA 的 FP32 累加 / relative-RMSE 冒烟脚本不作为此 CI 门禁。
 
 `run_experimental_validation.sh` 保持仅构建/host 的独立用途，新增
 `build_out/experimental-products.json` 供 CI 传递本次制品路径。总入口可手工复现：
 
 ```bash
-# 先按正式 CI 步骤安装匹配本次源码的正式 OPP + adapter，并准备 ATK。
+# 先按正式 CI 步骤安装匹配本次源码的正式 OPP + adapter；无须安装 ATK。
 FLA_NPU_DISABLE_PTH=1 CI_SOC=ascend910b CI_MODE=quick CI_CONTAINER_DEVICE=0 \
     python3 ci/run_experimental_ci.py
 # 完整前置/后置正式回归和实验检查：
@@ -351,10 +375,10 @@ CI_SOC=ascend910b CI_MODE=quick bash ci/run_ci_container.sh
 ```
 
 每次执行在 `CI_TMPDIR/experimental-ci-*`（未设置时为 `.ci-tmp/experimental-ci-*`）保留独立环境、
-分阶段日志、隔离观察和 ATK xlsx。分项状态、耗时、装载观察、ATK 统计及失败日志尾部同步写入
-已有 `npu-ci-stages-<platform>.json` 的 `experimental` 字段，随 main 当前 workflow 的既有 artifact
-上传，不依赖本 PR 修改 workflow 后才采集。完整 xlsx 和环境仅留在执行机器，不随这个既有
-artifact 上传。正式前后两轮 GDR 都必须成功；现有 accuracy report 保存后置正式回归结果。
+分阶段日志、隔离观察、逐用例对拍 JSON 和真实 NPU 调用后的库来源证据。分项状态、耗时、装载观察、
+逐输出误差、阈值和失败日志尾部同步写入已有 `npu-ci-stages-<platform>.json` 的 `experimental`
+字段，随 main 当前 workflow 的既有 artifact 上传，不依赖本 PR 修改 workflow 后才采集。
+正式前后两轮 GDR 都必须成功；现有 accuracy report 保存后置正式回归结果。
 
 ## 8. 兼容与后续演进
 

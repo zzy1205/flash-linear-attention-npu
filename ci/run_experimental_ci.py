@@ -16,7 +16,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 OP = "fused_recurrent_rwkv8"
-PHASES = ("build-host", "profiles", "load-isolation", "accuracy-queue", "accuracy-inline")
+PHASES = ("dependencies", "build-host", "profiles", "load-isolation", "accuracy-queue", "accuracy-inline")
 
 
 def module(path):
@@ -49,10 +49,15 @@ def write_json(path, value):
 
 
 def check_accuracy(result, expected):
-    if (not result.get("found") or not result.get("all_pass")
+    if (expected <= 0 or not result.get("complete")
+            or len(result.get("results", [])) != expected
+            or result.get("case_indices") != list(range(expected))
+            or any(item.get("index") != index or item.get("status") != "PASS"
+                   for index, item in enumerate(result.get("results", [])))
+            or not result.get("found") or not result.get("all_pass")
             or result.get("total") != expected or result.get("check_pass") != expected
             or result.get("exec_fail") != 0 or result.get("check_fail") != 0):
-        raise RuntimeError(f"ATK accuracy did not pass exactly {expected} cases: {result}")
+        raise RuntimeError(f"CPU-reference accuracy did not pass exactly {expected} planned cases")
     return result
 
 
@@ -104,6 +109,19 @@ class Validation:
             item["seconds"] = round(time.monotonic() - started, 3)
             self.save()
             print(f"[experimental][CI] {item['status'].upper()} {name}", flush=True)
+
+    def dependencies(self):
+        output = self.output / "dependencies.json"
+        try:
+            self.run([sys.executable, ROOT / "ci/check_experimental_environment.py", "--output", output],
+                     timeout=720)
+        finally:
+            if output.exists():
+                self.report["phases"]["dependencies"]["result"] = json.loads(output.read_text())
+        result = json.loads(output.read_text())
+        for warning in result["warnings"]:
+            print(f"[experimental][WARNING] {warning}", flush=True)
+        return result
 
     def build(self):
         products = ROOT / "build_out/experimental-products.json"
@@ -196,66 +214,37 @@ class Validation:
         return result
 
     def accuracy(self, launch):
-        if "atk" not in self.profiles:
-            self.atk_root, purelib = self.profile("atk", experimental=True)
-            wheel = os.environ.get("CI_EXPERIMENTAL_ATK_WHEEL")
-            if wheel:
-                wheel = Path(wheel).resolve()
-                if not wheel.is_file():
-                    raise RuntimeError("CI_EXPERIMENTAL_ATK_WHEEL must be an existing wheel inside the container")
-                dependencies = self.atk_root / "atk-dependencies"
-                self.run([sys.executable, "-m", "pip", "install", "--target", dependencies,
-                          "--constraint", ROOT / "ci/experimental-atk-constraints.txt", wheel])
-                # Never replace links to the parent environment's dependencies.
-                # Process this before the experimental bootstrap .pth below.
-                (purelib / "00_atk_dependencies.pth").write_text(
-                    f"import sys; sys.path.insert(0, {str(dependencies)!r})\n")
-            # Resolve the entry point in this private environment, never a parent atk executable.
-            entry = self.atk_root / "bin/atk"
-            entry.write_text(f"#!{self.atk_root}/bin/python\nimport sys\nfrom importlib.metadata import distribution\n"
-                             "sys.exit(next(e for e in distribution('ATK').entry_points if e.name == 'atk').load()())\n")
-            entry.chmod(0o755)
-            try:
-                self.run([entry, "--version"], timeout=60)
-            except subprocess.CalledProcessError as exc:
-                raise RuntimeError("ATK is unavailable: preinstall ATK and dependencies in the CI image "
-                                   "or set CI_EXPERIMENTAL_ATK_WHEEL to a container-accessible wheel") from exc
-            self.run([self.atk_root / "bin/python", "-c", "from importlib.metadata import version; "
-                      "assert version('kombu') == '5.6.2', 'Experimental CI requires kombu==5.6.2; "
-                      "install using ci/experimental-atk-constraints.txt'"])
-            (purelib / "00_experimental_atk_bootstrap.pth").write_text("import fla_npu_experimental\n")
-        profile = self.profiles["atk"]
+        profile = self.profiles["experimental_only"]
         env = clean_environment({"mode": "experimental", "scenario": "experimental"}, profile)
-        for key in ("CASE_START", "CASE_END", "ACCURACY_START", "ACCURACY_END", "CANN_ENV", "FLA_NPU_OPP_ENV"):
-            env.pop(key, None)
-        expected = 3 if self.mode == "quick" else len(json.loads(
-            (ROOT / f"tests/atk/{OP}/atk_{OP}.json").read_text()))
-        env.update(ATK_ENV=str(self.atk_root), FLA_NPU_ENV=str(Path(profile["experimental_package"]) /
-                   "opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash"),
-                   ATK_OUTPUT_ROOT=str(self.output / ("atk-" + launch)),
-                   ATK_TIMEOUT="600" if self.mode == "quick" else "7200",
-                   OMP_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4", MKL_NUM_THREADS="4",
-                   CASE_START="0", CASE_END=str(expected))
+        env.update(OMP_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4", MKL_NUM_THREADS="4",
+                   FLA_A2_TRACE_DIR=str(self.output / ("accuracy-" + launch + "-trace")))
         env.pop("FLA_NPU_STABLE_LAUNCH", None)
         if launch == "inline":
             env["FLA_NPU_STABLE_LAUNCH"] = "inline"
-        self.run(["bash", "tests/atk/run_test_cpu.sh", f"-op={OP}", "-soc=ascend910b",
-                  "-npu_device_id=" + os.environ.get("CI_CONTAINER_DEVICE", "0"), "-scope=accuracy"],
-                 env, timeout=int(env["ATK_TIMEOUT"]) + 60)
+        expected = 3 if self.mode == "quick" else len(json.loads(
+            (ROOT / f"tests/atk/{OP}/atk_{OP}.json").read_text()))
         result_file = self.output / ("accuracy-" + launch + ".json")
-        checker = ROOT / "tests/atk/common/check_atk_result.py"
-        code = ("import importlib.util,json; from pathlib import Path; "
-                f"s=importlib.util.spec_from_file_location('checker',{str(checker)!r}); "
-                "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
-                f"Path({str(result_file)!r}).write_text(json.dumps(m.check_accuracy({env['ATK_OUTPUT_ROOT']!r},{OP!r})))")
-        self.run([profile["python"], "-c", code], env, timeout=60)
-        return check_accuracy(json.loads(result_file.read_text()), expected)
+        try:
+            self.run([profile["python"], ROOT / "ci/run_experimental_accuracy.py",
+                      "--mode", self.mode, "--device", self.report["device"], "--output", result_file],
+                     env, timeout=660 if self.mode == "quick" else 7260)
+        finally:
+            if result_file.exists():
+                # Preserve per-case numerical diagnostics in the uploaded stage artifact.
+                self.report["phases"]["accuracy-" + launch]["result"] = json.loads(result_file.read_text())
+        result = json.loads(result_file.read_text())
+        result["execution_evidence"] = [json.loads(path.read_text()) for path in
+                                        Path(env["FLA_A2_TRACE_DIR"]).glob("experimental-*.json")]
+        if not result["execution_evidence"]:
+            raise RuntimeError("Missing evidence of real experimental NPU execution")
+        return check_accuracy(result, expected)
 
     def execute(self):
         self.save()
         try:
             if self.soc not in {"ascend910b", "ascend950"} or self.mode not in {"quick", "full"}:
                 raise ValueError(f"Unsupported experimental CI configuration: {self.soc}/{self.mode}")
+            self.phase("dependencies", self.dependencies)
             self.phase("build-host", self.build)
             if self.soc == "ascend910b":
                 self.phase("profiles", self.prepare)
@@ -263,7 +252,7 @@ class Validation:
                 for launch in ("queue", "inline"):
                     self.phase("accuracy-" + launch, lambda launch=launch: self.accuracy(launch))
             else:
-                for name in PHASES[1:]:
+                for name in PHASES[2:]:
                     self.report["phases"][name] = {"status": "skipped", "reason": "Runtime suite supports A2 only"}
             self.report.update(complete=True, status="success")
         except Exception as exc:

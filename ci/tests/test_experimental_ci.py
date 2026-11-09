@@ -42,7 +42,8 @@ class ExperimentalCI(unittest.TestCase):
                     raise RuntimeError("injected missing/failed result")
                 return {"checked": name}
 
-            with patch.object(runner, "build", lambda: action("build")), \
+            with patch.object(runner, "dependencies", lambda: action("dependencies")), \
+                    patch.object(runner, "build", lambda: action("build")), \
                     patch.object(runner, "prepare", lambda: action("profiles")), \
                     patch.object(runner, "isolation", lambda: action("isolation")), \
                     patch.object(runner, "accuracy", lambda mode: action(mode)), \
@@ -56,16 +57,16 @@ class ExperimentalCI(unittest.TestCase):
     def test_a2_runs_both_launch_modes_after_isolation(self):
         code, calls, result = self.execute()
         self.assertEqual(code, 0)
-        self.assertEqual(calls, ["build", "profiles", "isolation", "queue", "inline"])
+        self.assertEqual(calls, ["dependencies", "build", "profiles", "isolation", "queue", "inline"])
         self.assertTrue(result["complete"])
 
     def test_a5_explicitly_does_not_claim_accuracy(self):
         code, calls, result = self.execute("ascend950")
-        self.assertEqual((code, calls), (0, ["build"]))
+        self.assertEqual((code, calls), (0, ["dependencies", "build"]))
         self.assertEqual(result["phases"]["accuracy-queue"]["status"], "skipped")
 
     def test_failure_prevents_following_checks_and_is_uploaded(self):
-        for phase in ("build", "profiles", "isolation", "queue", "inline"):
+        for phase in ("dependencies", "build", "profiles", "isolation", "queue", "inline"):
             with self.subTest(phase=phase):
                 code, calls, result = self.execute(fail=phase)
                 self.assertEqual(code, 1)
@@ -88,11 +89,14 @@ class ExperimentalCI(unittest.TestCase):
                     runner.isolation()
             self.assertEqual(runner.report["phases"]["load-isolation"]["result"], result)
 
-    def test_missing_short_or_failed_atk_report_rejected(self):
-        valid = {"found": True, "all_pass": True, "total": 3, "check_pass": 3,
+    def test_missing_short_or_failed_reference_report_rejected(self):
+        valid = {"complete": True, "results": [{"index": i, "status": "PASS"} for i in range(3)],
+                 "case_indices": [0, 1, 2], "found": True, "all_pass": True, "total": 3, "check_pass": 3,
                  "exec_fail": 0, "check_fail": 0}
         self.assertEqual(ci.check_accuracy(valid, 3), valid)
-        for change in ({"found": False}, {"total": 0}, {"total": 2}, {"check_pass": 2},
+        for change in ({"complete": False}, {"results": []}, {"case_indices": [0, 1, 1]},
+                       {"results": [{"index": 0, "status": "ERROR"}] * 3},
+                       {"found": False}, {"total": 0}, {"total": 2}, {"check_pass": 2},
                        {"exec_fail": 1}, {"check_fail": 1}, {"all_pass": False}):
             with self.subTest(change=change), self.assertRaises(RuntimeError):
                 ci.check_accuracy({**valid, **change}, 3)
