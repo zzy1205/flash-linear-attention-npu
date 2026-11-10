@@ -27,6 +27,22 @@ Stable ABI 是调用技术，正式/实验是产品分类。实验算子使用 S
 本设计不支持 experimental overlay，不提供进程内热更新，不将实验制品接入正式发布，
 不将构建脚本或动态链接器视为安全沙箱。算子更新通过重新构建并安装匹配实验 wheel 完成。
 
+### 1.1 当前支持场景
+
+以下按当前实现列出边界。“待适配/未验收”不等于已经支持，也不等于永久排除。
+构建参数的长期兼容目标和逐项差距见 §3.1；平台与实测范围见验证记录。
+
+| 维度 | 当前支持 | 明确不支持 | 待适配或未验收 |
+| --- | --- | --- | --- |
+| 构建 | 正式/实验分别选择源码和依赖闭包；实验 custom OPP、独立 run/wheel；`--ops` 单选、多选，不传或 `all/ALL` 全选实验集合 | 正式/实验混编；由正式 wheel 入口打包实验算子；experimental overlay | 当前只有 RWKV8 一个真实算子，多选只有夹具验证；`--static`、`--example` 当前拒绝；JIT、分目标、UT、示例及 PR 测试入口未完整适配，其他编译参数组合未穷举。`--list-ops` 当前要求 `--experimental` 在前 |
+| 安装 | run 安装到显式独立空目录；拒绝写入正式包及其子路径；wheel 使用独立 distribution/package，在独立 Python 环境安装和卸载 | 默认装入 CANN、覆盖正式 wheel、run 原位升级、overlay | 不维护同一 Python 环境内正式/实验双包共存及安装顺序兼容矩阵；不承诺并发写入、断电或强杀后的事务恢复 |
+| 运行 | A2 独立进程，独立实验 dispatcher/launcher/OPP；RWKV8 前向，FP16/BF16/FP32、可选初态及 `s/sa`；默认队列和 inline | 同进程正式/实验混用、加载后切换来源、外部 run 替换 wheel 内嵌 OPP、自有符号回落正式库、overlay/热更新、反向/autograd | reverse、多 stream/并发、确定性、MSS、性能和 A5 数值未验收；当前 RWKV8 未配置 A3；直接 aclnn 的非连续输出存在 §6.2 所述限制 |
+| CI | 独立实验编排和检查状态；依赖预检前置，缺 ATK 只 warning；A2 构建/安装/隔离/NPU 对拍 CPU reference，A5 构建/host | 默认门禁不维护双包共存或 overlay 矩阵，不执行 A5 数值/性能/MSS/确定性；`ops=` 请求仅为正式定向诊断 | 新 GitHub job 须合入受保护 workflow 后调度并配置必需状态；当前精度门禁只覆盖 RWKV8，新增算子须补齐其验证 |
+
+支持的运行配置是独立实验环境与新进程。distribution 名称不同、文件可以并列存放，不构成
+同环境共存的兼容承诺。A2 当前完整入口已直接执行；A5 只有既往版本的构建/host 证据，
+本轮未重跑 A5。新 GitHub job 的代码已接入，但尚未由受保护 workflow 调度。
+
 ## 2. 架构与来源顺序
 
 ```mermaid
@@ -102,46 +118,39 @@ distribution 按 SoC 分档，例如 `flash-linear-attention-npu-experimental-a2
 ### 3.1 build.sh 参数兼容边界
 
 目标约定：在主干已有、可用的构建命令及参数组合上增加 `--experimental`，切换算子来源、
-依赖闭包和制品身份，其余构建参数保持对应语义；experimental overlay 不支持。
-准确开关名为 `--experimental`，不是 `--experiment`。该开关本身不替代 `--pkg` 等构建动作。
-不能把当前实现的额外限制当作长期设计边界，也不能把“解析器接受参数”当作该功能已适配通过。
+依赖闭包和制品身份，其余参数保持对应语义；experimental overlay 不支持。
+`--experimental` 是模式开关，需配合 `--pkg` 等动作。以下支持状态按当前交付范围填写。
 
 以下选择规则以 custom OPP 构建 `bash build.sh --pkg --experimental ...` 为例：
 
-| 参数 | 实验模式语义 | 当前实现与证据 |
+| 参数 | 实验模式语义 | 是否实现 |
 | --- | --- | --- |
-| `--ops=fused_recurrent_rwkv8` | 选择指定实验算子及其传递实验依赖 | 已实现；RWKV8 单算子 A2 构建、打包与装载已验证 |
-| `--ops=op_a,op_b` | 一次选择多个实验算子，合并依赖闭包并去重；`op_a/op_b` 须为实际存在的名称 | 框架已支持多算子选择、依赖和注册；当前用临时夹具验证，不声明本轮真实多算子 NPU 验收 |
-| 不传 `--ops` | 选择全部实验算子 | 已实现默认全选；CMake 默认选择为 `ALL` |
-| `--ops=all` / `--ops=ALL` | 与不传 `--ops` 的全选集合相同 | 已实现；本轮 A2 显式 `--ops=all` 构建与包审计已验证 |
-| `--experimental --list-ops` | 只列出实验算子，不列正式算子及 `_` 开头的框架目录 | 已实现此顺序；反序 `--list-ops --experimental` 会提前列出正式集合，属于待修复缺陷 |
-| 正式算子名或不存在的实验算子名 | 明确失败，不回落到正式集合或偷偷改为全编 | 已有名称及闭包校验 |
+| `--ops=fused_recurrent_rwkv8` | 选择指定实验算子及其依赖 | 已实现 |
+| `--ops=op_a,op_b` | 选择多个实验算子，合并依赖并去重 | 已实现 |
+| 不传 `--ops` | 全选实验算子 | 已实现 |
+| `--ops=all` / `--ops=ALL` | 全选实验算子 | 已实现 |
+| `--experimental --list-ops` | 列出实验算子 | 已实现 |
+| `--list-ops --experimental` | 列出实验算子 | 未实现 |
+| 正式算子名或不存在的实验算子名 | 拒绝构建 | 已实现 |
 
-“全编”仅指实验集合及其依赖。当前真实实验集合只有 `fused_recurrent_rwkv8`，因此本轮
-单算子和全编的集合相同，不能据此推断多个真实实验算子的联合构建或执行已验收。
+“全编”仅指实验集合及其依赖，当前真实实验算子只有 `fused_recurrent_rwkv8`。
 
-其余参数的目标与当前差距如下；未逐项列出的主干有效构建参数也属于上述兼容目标。
+其他参数的当前支持情况如下：
 
-| 参数或功能 | 目标边界 | 当前状态 |
+| 参数或功能 | 说明 | 是否支持 |
 | --- | --- | --- |
-| `--soc`、`-j`、`-O`、`--build-type`、`--verbose`、`--bisheng_flags`、`--oom` 等编译选项 | 继续控制所选实验算子的目标、并行度和编译行为 | 复用主干解析与传递路径；不代表全部取值、组合及 SoC 都已实测 |
-| `--kernel_template_input` 等带组合限制的参数 | 保留主干校验；例如模板输入只允许指定单个算子 | 不因实验模式放宽原有约束 |
-| vendor 与 SoC 范围 | 保留主干现有约束，并使用独立实验身份 | 本轮基线固定正式 vendor 为 `fla_npu`、实验 vendor 为 `fla_npu_experimental`；custom 构建路径及实验 wheel 按单 SoC 使用，不承诺逗号分隔多 SoC 构建 |
-| `--static` | 对主干有效的静态构建组合提供实验对应能力，保持源码和制品隔离 | 当前被实验构建模式检查明确拒绝，待适配；不是 overlay 之外的永久排除项 |
-| `--jit` | 对主干有效的 JIT 组合提供实验对应能力，并匹配相应包审计规则 | 存在参数及 custom 构建分支；尚未完成实验制品端到端适配与验收，不能宣称完整支持 |
-| `--ophost`、`--opapi`、`--opgraph`、`--opkernel` 等分目标构建 | 对主干有效组合只处理实验集合 | 尚未完成逐入口、逐产物的完整验证 |
-| UT、`--example`、`--run_example` 及相关 PR 测试入口 | 从实验树选择测试及示例，使用实验制品，不借用正式算子入口 | `--example` 当前明确拒绝；其余入口尚未完整适配与验证 |
-| 参数顺序及 `--PR_PKG` 等提前处理入口 | 等价参数顺序得到同一模式和算子集合 | `--list-ops`、`--PR_PKG` 等需补齐模式预解析及顺序回归 |
-| overlay | 明确不支持 | 不增加实验 overlay 构建、安装、选择或运行回落能力 |
+| `--soc`、`-j`、`-O`、`--build-type`、`--verbose`、`--bisheng_flags`、`--oom` | 沿用主干参数语义及取值限制 | 支持 |
+| `--kernel_template_input` | 沿用主干限制，仅允许指定单个算子 | 支持 |
+| 固定实验 vendor、单 SoC | vendor 为 `fla_npu_experimental`，每次构建一个 SoC | 支持 |
+| 自定义 vendor、多 SoC 同包 | 更改实验身份或一次构建多个 SoC | 不支持 |
+| `--static` | 静态构建 | 不支持 |
+| `--jit` | JIT 构建 | 不支持 |
+| `--ophost`、`--opapi`、`--opgraph`、`--opkernel` | 分目标构建 | 不支持 |
+| UT、`--example`、`--run_example` | 测试与示例入口 | 不支持 |
+| 任意参数顺序、`--PR_PKG` 等提前处理入口 | 模式预解析与 PR 定向构建 | 不支持 |
+| overlay | 实验增量叠加包 | 不支持 |
 
-本节约束的是 `build.sh` 的构建参数兼容性，不扩大正式 wheel 打包入口、实验 `.run` 安装器
-或运行时的支持范围。正式 wheel 仍拒绝实验参数；实验安装器仍要求独立空目录；wheel 内嵌
-OPP 配套、固定实验身份、分进程装载等约束继续按第 4–6 节执行。
-
-参数兼容验收必须分别记录名称发现、实际构建、包内容与适用的执行结果，并覆盖单选、多选、
-默认全选、显式全选、传递依赖、参数顺序以及错误参数。共同支持的构建组合须对照正式模式
-检查原有功能不回归；主干本身不支持的组合无需在实验模式新增。上述缺口补齐并验证前，
-不得将当前版本描述为“除 overlay 外，build.sh 全部功能已等价支持”。
+除 overlay 外，尚不支持的主干有效构建组合属于后续适配范围。安装和运行限制见第 5–6 节。
 
 ### 3.2 源码与依赖闭包
 
@@ -160,6 +169,15 @@ host 挂载、kernel 复制、adapter 注册和审计消费同一解析结果。
 
 ## 4. ABI 门禁、清单与完整性边界
 
+ABI 门禁用于检查**本次构建的实验 launcher 与 OPP 是否配套**。launcher 通过动态符号调用
+aclnn，编译器不能直接核对实际 host 库的函数原型；例如 host 新增一个 `bool` 参数而 adapter
+仍使用旧参数列表，库可以加载，调用时却可能报错或错误解释参数。
+
+这里复用主干检查，核对 adapter 的参数数量和逐位置类型、host 导出及 `GetWorkspaceSize`/
+执行接口配对，并用清单绑定实际制品。实验接口可以修改，修改后重建匹配的 run/wheel；
+不要求实验接口与正式算子相同，也不要求实验版本之间保持 ABI 不变。
+包身份与路径检查负责正式/实验隔离，ABI 检查负责调用匹配，数值正确性由 NPU/CPU 对拍验证。
+
 | 阶段 | 检查与结果 |
 | --- | --- |
 | 选项预检 | 正式 wheel 入口拒绝实验参数；实验入口拒绝正式算子/身份；清理输出前失败 |
@@ -175,6 +193,7 @@ host 挂载、kernel 复制、adapter 注册和审计消费同一解析结果。
 `experimental-build-manifest.json` 负责来源、闭包和包审计信息；`abi_manifest.json` 负责 ACLNN
 公共调用契约及 host/header 哈希；`_build.json` 绑定 wheel 的 Python、launcher 和算子快照。
 三者职责互补，复用主线 ABI 解析器，不另造参数类型匹配规则。
+构建来源清单只记录算子 CMake、host、kernel、adapter 和实验公共头，排除文档、测试和示例。
 
 运行期不执行 `nm`，也不逐次重哈希全部 kernel。清单不是数字签名；构建期包审计、
 运行期 host/header 校验、调用期替换检测不能描述为任意文件篡改防护。
@@ -183,39 +202,73 @@ host 挂载、kernel 复制、adapter 注册和审计消费同一解析结果。
 
 ## 5. 安装、卸载与恢复
 
-```bash
-# 在独立 shell 初始化所选 CANN 和 Python 环境。
-export FLA_NPU_DISABLE_PTH=1
-bash build.sh --experimental --list-ops
-bash build.sh --pkg --experimental --soc=ascend910b --ops=fused_recurrent_rwkv8 -j4
-# 不传 --ops 或显式 --ops=all 均选择全部实验算子；同一 checkout 的构建串行执行。
+以下以 A2 为例，在仓库根目录执行；将环境名和 `/absolute/...` 替换为实际值。
+Python 环境需预先安装匹配的 torch、torch_npu 和构建依赖。
 
-# 目标必须是绝对空目录或尚不存在的目录，父目录必须存在。
+### 5.1 构建与安装
+
+```bash
+# 关闭正式 wheel 的 Python 启动注入。
+export FLA_NPU_DISABLE_PTH=1
+
+# 激活用于构建和安装实验包的独立 Python 环境。
+conda activate experimental-env
+
+# 设置 CANN 编译工具和运行库路径。
+source /absolute/ascend-toolkit/set_env.sh
+
+# 列出当前可选的实验算子。
+bash build.sh --experimental --list-ops
+
+# 编译 A2 的 RWKV8 host/kernel，并生成独立实验 run 包。
+bash build.sh --pkg --experimental --soc=ascend910b --ops=fused_recurrent_rwkv8 -j4
+
+# 将实验 OPP 安装到指定独立空目录，父目录须已存在。
 bash build_out/fla_npu_experimental_linux-$(uname -m).run \
   --install-path=/absolute/experimental-opp --quiet
+
+# 核对已安装 OPP 的算子集合、目标 SoC、来源清单和 ABI。
 python scripts/experimental_manifest.py audit \
   --install-root /absolute/experimental-opp --soc ascend910b \
   --manifest build/experimental-build-manifest.json
+
+# 编译实验 launcher，并将 Python 包、launcher 和匹配 OPP 打成独立 wheel。
 python experimental/_framework/build.py wheel \
   --manifest build/experimental-build-manifest.json \
   --install-root /absolute/experimental-opp --output /absolute/experimental-wheels
-# 将 matching-wheel.whl 替换为上一步生成的实际文件名。
+
+# 安装生成的实验 wheel，不改动环境中已准备好的依赖。
 python -m pip install --no-deps /absolute/experimental-wheels/matching-wheel.whl
 ```
 
-实验 `.run` 不支持默认安装、`--install/--full/--cann`、overlay 或原位升级。
-拒绝相对路径、路径中的软链、非空目标、活动 OPP/toolkit 以及已有正式包/OPP 子路径。
-独立 wheel 必须使用自身内嵌、同次构建的 OPP，不能与外部 `.run` 任意拼装。
+`matching-wheel.whl` 替换为实际文件名；不传 `--ops` 或指定 `--ops=all` 可全编实验算子。
+同一 checkout 的构建串行执行，重建前归档需要保留的 `build_out` 制品。
+run 拒绝相对路径、软链、非空目标、活动 OPP/toolkit 和正式包子路径，不支持默认安装或原位升级。
+wheel 运行时只使用自身内嵌 OPP。
 
-更新 Python/schema/adapter/ABI 或更换算子集时，重建完整匹配 wheel。
-先停止使用该安装目录的进程，再由 pip 卸载/重装实验 distribution，最后启动新进程。
-外部 `.run` 目录由调用方管理，回收前核实路径与使用者；不通过正式 overlay 管理器卸载实验包。
+### 5.2 卸载、更新与恢复
 
-拒绝安装和复制失败应保持目标原状；不承诺断电、强杀或并发写入后的自动事务恢复。
-`build`、`build_out` 会被构建入口清理，须先归档制品，禁止并发使用同一输出根。
-失败或取消后确认本轮写入进程已停止再清理/重试，不复用旧成功标记充当新结果。
+先停止使用实验包的进程，在原实验 Python 环境中执行：
 
-## 6. 启动、执行与 ATK 契约
+```bash
+# 卸载 A2 实验 wheel 及其内嵌 OPP。
+python -m pip uninstall flash-linear-attention-npu-experimental-a2
+
+# 更新时安装新构建的完整匹配 wheel，随后按第 6 节启动新进程。
+python -m pip install --no-deps /absolute/experimental-wheels/new-wheel.whl
+```
+
+恢复旧版本时，先卸载当前实验 wheel，再安装归档的旧 wheel：
+
+```bash
+# 恢复归档版本的 Python、launcher 和 OPP。
+python -m pip install --no-deps /absolute/archived-wheels/previous-wheel.whl
+```
+
+外部 run 安装目录由调用方单独回收；pip 卸载不会删除该目录。
+安装失败应保持目标原状；强杀或并发写入后，确认相关进程停止并检查目录后再清理重试。
+
+## 6. 启动与执行
 
 | 输入 | 实验语义 |
 | --- | --- |
@@ -226,108 +279,113 @@ python -m pip install --no-deps /absolute/experimental-wheels/matching-wheel.whl
 | 正式 `FLA_NPU_OP_API_LIB(S)` / overlay 选择变量 | 不作为实验 host 来源，不为实验算子启用正式回落 |
 | `FLA_NPU_STABLE_LAUNCH=inline` | 共享运行时的显式 inline 模式；默认按队列能力选择路径 |
 
+### 6.1 启动与调用步骤
+
+在新 shell 中执行，将环境名及路径替换为第 5 节的实际安装位置。
+
 ```bash
+# 在 Python 启动前关闭正式 wheel 的启动注入。
 export FLA_NPU_DISABLE_PTH=1
-source /absolute/cann/set_env.sh
+
+# 激活已安装实验 wheel 的 Python 环境。
+conda activate experimental-env
+
+# 设置 CANN 运行库及工具路径。
+source /absolute/ascend-toolkit/set_env.sh
+
+# 选择实验 wheel 内嵌的 vendor，供 CANN 查找实验算子。
 source /absolute/site-packages/fla_npu_experimental/opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash
+
+# 启动新 Python 进程并执行一次 RWKV8 前向调用。
 python - <<'PY'
-import fla_npu_experimental                 # 必须先于 torch_npu / acl
+# 在 torch_npu/acl 初始化前配置实验 OPP 并检查装载隔离。
+from fla_npu_experimental import fused_recurrent_rwkv8
+
+# 导入张量框架和 NPU 后端。
 import torch
 import torch_npu
-# 创建目标设备上的输入，再调用所选实验算子的公开 wrapper。
+
+# 选择第 0 张可见 NPU 卡。
+torch.npu.set_device(0)
+
+# 创建六个 shape 为 (B,H,T,K)=(1,1,2,8) 的 FP32 零输入，此例 V=K。
+q, w, k, v, z, b = (
+    torch.zeros((1, 1, 2, 8), dtype=torch.float32, device="npu:0")
+    for _ in range(6)
+)
+
+# 执行前向计算；默认不输出 s/sa，返回值为 (o, None, None)。
+o, s, sa = fused_recurrent_rwkv8(q, w, k, v, z, b)
+
+# 等待设备执行完成。
+torch.npu.synchronize()
+
+# 将输出读回 CPU 并显示结果，此例 o 应全部为零。
+print(o.cpu(), s, sa)
 PY
 ```
 
-toolkit 脚本准备 CANN 工具与依赖；vendor 脚本准备自定义 OPP 路径。source 不等于运行时初始化。
-实验包须先于 `torch_npu`/`acl` 及相关 CANN 库加载进行配置。Python 启动后才关闭正式 `.pth`
-不能撤销路径注入。同进程正式→实验、实验→正式，以及加载后切换路径或替换受监控文件均被拒绝。
-切换模式须退出并启动新进程。
+默认按运行时能力选择队列路径；需要强制 inline 时，在启动 Python 前设置
+`FLA_NPU_STABLE_LAUNCH=inline`。两种方式都使用目标设备的当前 stream。
+同进程混用正式/实验模块、加载后切换 OPP 或替换受监控文件会被拒绝，切换模式须重启进程。
 
-wrapper 通过独立 Stable dispatcher 检查输入设备一致性，并使用目标设备的当前 stream。
-仅在队列能力可用时取 NoWait stream accessor；inline 使用安全 accessor。
-RWKV8 保留三返回槽位、可选输出及零尺寸状态生命周期，并拒绝越界 `chunk_len`。
+### 6.2 RWKV8 直接 aclnn 的非连续输出限制
 
-### 6.1 ATK worker 的准备（备选复验）
+此项属于从 PR #446 迁入的 RWKV8 host 输出处理，独立于 experimental 的构建、安装和装载隔离。
+需要区分两个入口：
 
-默认 CI 使用 `ci/run_experimental_accuracy.py` 直接进行 NPU / CPU reference 对拍，不依赖 ATK。
-ATK 工程保留用于手工精度复验、确定性、MSS 和性能测试；下列 worker 准备只适用于该备选入口。
-
-ATK 不选择 experimental vendor，也不替调用方安装 wheel。`run_test_cpu.sh` 激活 `ATK_ENV`，
-source `CANN_ENV`，再 source `FLA_NPU_ENV`；实验任务必须指向实验 wheel 的 vendor 脚本。
-executor 调用 `fla_npu_experimental`，CPU 标杆保持独立。
-
-ATK 及 worker 可能先导入 `torch_npu`。使用备选 ATK 验证时，在专用、一次性环境中安装
-`00_experimental_atk_bootstrap.pth`，内容为 `import fla_npu_experimental`，并在任何 ATK/Python
-进程启动前配置环境。此文件仅用于备选验证，不随 wheel 发布；维护测试 wheel 时先禁用 bootstrap，
-装好匹配包并准备环境后再启用。装载顺序矩阵不得使用该 bootstrap。
-
-远程或常驻 worker 须在自身启动环境完成同样准备，控制端后来 source 不会更新它们。
-不要用源码 `PYTHONPATH` 冒充已安装 wheel；CANN 自身的 `acl/tbe` Python 路径仍须保留。
-
-## 7. 检视入口与独立 CI
-
-| 要求 | 实现入口 | 验证 |
+| 调用入口 | 输出缓冲区由谁提供 | 当前影响 |
 | --- | --- | --- |
-| 构建集合独立 | `build.sh`、`cmake/experimental.cmake`、`scripts/check_build_ops.py` | 正式 OFF / 实验 ON 发现、依赖闭包、多选与拒绝跨树输入 |
-| 制品与安装独立 | `scripts/experimental_manifest.py`、实验安装器、`experimental/_framework/build.py` | 包内算子/ABI 审计、wheel 文件布局、真实 `.run` 拒绝正式目录 |
-| 运行隔离 | 实验 loader / launcher、`experimental/_tests/isolation.py` | 单环境装载、混杂路径/库/模块拒绝、错误制品与加载后变更拒绝 |
-| 功能正确 | `ci/run_experimental_accuracy.py`、`experimental/_tests/rwkv8_reference.py` | NPU 与 CPU reference 对拍、输出契约和实际调用来源 |
-| 独立门禁 | `ci/run_experimental_ci.py`、`ci.yml` 的实验 job 和独立状态发布器 | A2 完整验证、A5 构建/host；缺报告、身份不匹配、异常均失败 |
+| `fla_npu_experimental.fused_recurrent_rwkv8(...)` | Stable adapter 通过 `allocate_sizes` 新建连续输出；Python 签名没有 `out=` 参数 | 不触发此次非连续输出问题；已有 A2 精度门禁覆盖此路径 |
+| `aclnnFusedRecurrentRwkv8GetWorkspaceSize(..., out, sOut, saOut, ...)` | 调用方提供 aclTensor，可携带非连续 strides | `out` 非连续时已复现 workspace 阶段失败；`sOut/saOut` 有同类代码，但尚未分别实测 |
 
-保留现有 runtime 的全量 Python/launcher 指纹校验，以及每次调用的环境、进程映射和文件元数据检查。
-本次只精简 CI 兼容矩阵与重复入口，不改变运行时变更检测行为。
-构建来源清单只记录 `CMakeLists.txt`、`op_host/`、`op_kernel/`、`adapter/` 和实验公共头；文档、测试、示例不再计入算子输入指纹。包内容、ABI 和实际编译产物的审计仍保留。
+当前 host 将输出先转连续，再作为写回目的地：
 
-### 7.1 GitHub NPU CI 调度与失败边界
+```cpp
+auto out_ = l0op::Contiguous(out, executorPtr);
+auto viewCopyResult = l0op::ViewCopy(outRet, out_, executorPtr);
+```
+
+对非连续输入，生成连续临时张量供 kernel 读取是正常做法；对调用方的输出，写回目的地必须
+仍是原始缓冲区。这里 `Contiguous` 为非连续 `out` 生成 executor 管理的连续临时张量，
+随后 `ViewCopy` 的目标变为临时张量，而没有向原 `out` 写回。
+
+A2 / CANN 9.1.0 补测中，相同合法 shape 和 FP32 零输入，连续输出执行正确；改用最后一维
+stride 为 2 的非连续输出 view，`GetWorkspaceSize` 返回 `561103`，错误为 `Output tensor should not from workspace`。
+该次调用在准备阶段失败，未启动计算，不是已证实的静默数值错误。具体复现条件和对照结果见
+[验证记录](../../experimental/validation.md#2026-11-10-直接-aclnn-输出布局补测)。
+
+接口文档目前没有声明输出必须连续，故将其记录为直接 aclnn 的实现限制，不能把现有 Python
+精度通过扩大解释为任意 aclTensor 输出布局都可用。最小修复方向是直接
+`ViewCopy(outRet, out, executorPtr)`，`sOut/saOut` 同理，并补三个输出的非连续 view 对拍、
+未选中存储区域保持不变及原连续/可选/空输出回归。此处只记录问题与修复方向，代码尚未修改；
+无需因此调整 experimental loader、包身份或 CI 调度架构。
+
+## 7. CI 调度流程
 
 ```mermaid
 flowchart TD
-    P[授权触发 quick/full，固定 PR head 与目标分支] --> F[正式 A2/A5 job]
-    P --> E[实验 A2/A5 job]
-    F --> FC[原有正式构建、安装、GDR]
-    FC --> FS[原有 6 个正式状态]
-    E --> D[依赖前置检查：缺 ATK 只 warning]
-    D --> B[只编实验 run/wheel，独立安装、ABI 审计、host 装载]
+    P[授权触发 quick/full] --> V[prepare：固定 PR head 与目标分支]
+    V --> F[正式 A2/A5 job]
+    V --> E[实验 A2/A5 job]
+    F --> FC[正式构建、安装与精度验证]
+    FC --> FS[发布正式检查状态]
+    E --> D[依赖预检：必要依赖缺失失败，缺 ATK 仅告警]
+    D --> B[实验 run/wheel 构建、独立安装、ABI 和 host 检查]
     B --> S{平台}
-    S -->|A2| I[3 个正式目录安装拒绝 + 22 项装载隔离]
-    I --> A[NPU / CPU reference：默认与 inline]
-    S -->|A5| H[仅构建/host，运行阶段明确 skipped]
-    A --> R[独立实验报告，校验 head/run/attempt 和完整性]
+    S -->|A2| I[安装拒绝与装载隔离验证]
+    I --> A[NPU 对拍 CPU reference：默认与 inline]
+    S -->|A5| H[跳过运行与精度验证]
+    A --> R[上传报告并校验完整性及提交身份]
     H --> R
-    R --> ES[NPU CI / Experimental / A2 runtime + A5 build]
+    R --> ES[发布实验独立检查状态]
 ```
 
-- 正式与实验 job 都只依赖 prepare。共用工作流内的执行步骤、镜像、设备锁和源码校验，但临时目录、容器名、构建缓存、artifact 和状态分开。各自的失败不会改写另一套状态。
-- `run_checks.sh` 保持主干正式流程；`CI_SUITE=experimental` 由容器入口调用唯一的 `run_experimental_ci.py`。不再通过正式 GDR 夹带实验构建，也不再执行前后两遍正式 GDR。
-- 完整 quick/full 请求同时运行两套门禁；带 `ops=` 的既有请求仍只是正式定向诊断，不运行实验，也不改写任何完整门禁。手工实验选编仍通过 `build.sh --experimental --ops=...`。
-- 默认状态、触发去重和分支保护脚本包含实验独立 context。实验门禁检查同次运行的 A2/A5 报告、平台、SoC、模式、head SHA、run ID、attempt，且提交时 PR 仍打开、非草稿、head/base ref 未变化。
-- Workflow 来自受保护目标分支，不会因为 PR 修改了 YAML 就自动执行新 job。合入前可在 A2 直接执行同一入口验证；合入后新调度生效，管理员按仓库规则更新必需状态检查。不得用旧 workflow 的成功冒充新实验 gate 已运行。
-
-### 7.2 精简后的实验验证
-
-`ci/check_experimental_environment.py` 在实验构建前检查 `torch`、`torch_npu`、`numpy`、`setuptools`、`wheel`、`pip`、`venv` 的真实导入。必要依赖缺失立即失败，ATK/Kombu 缺失只告警。ATK 是独立备选工程，不由默认 CI 安装。
-
-只创建一个实验 Python 环境，继承 torch/CANN 依赖但不继承 FLA 包、用户 site 或 `.pth`。不准备正式 wheel、combined、overlay 或单算子别名 profile。用于负例的正式目录、模块和小型动态库是测试夹具，不作为正式算子可用性的证据。
-
-- 实际 `.run` 安装至独立空目录并审计；另验证安装至正式包目录、其 `opp`、其新建子目录都被拒绝，原目录内容不变。wheel 采用独立 distribution/package，文件集合契约禁止正式入口。
-- 22 项装载用例：实验独立加载，未关闭启动注入，正式/实验路径混杂，两种模块导入顺序，torch_npu 提前导入，异库提前/随后加载，路径或清单被替换，host/ABI/launcher/源码指纹/算子集合错误，外部 OPP、未注册算子、越界链接、Python 文件变化。每个用例使用新进程；副本上才执行破坏性负例。
-- 负例必须在目标操作阶段命中预期异常；缺依赖、超时、崩溃、前置条件错误不能算成功。真实执行之后记录库映射和 dispatcher，确认只使用实验实现。
-- A2 quick 默认/inline 各 3 条，full 各 209 条，沿用原 ATK JSON；输入先量化一次，NPU 使用原 dtype，同值 FP64 输入用于 CPU 递推，golden 转 FP32 比较。报告必须有准确的 case 索引、输出和通过数。
-- CPU reference 由 CI、PTA、dump 复用。ATK 按工程规范保留自包含副本；契约测试检查造数 AST 和 FP32/FP64 逐输出一致。PTA 保留独有的边界/负例和原 FP32/relative-RMSE 诊断口径，不作为 CI 精度标准。
-
-数值标准固定为 ATK 26.9.8 的 `mixed_tolerance_bm` v1：
-
-| 输出 dtype | rtol | atol | max_abs_error_limit |
-| --- | --- | --- | --- |
-| FP16 | 1.95e-3 | 1.95e-3 | 0.1 |
-| BF16 | 1.56e-2 | 1.56e-2 | 1.0 |
-| FP32 | 9.77e-4 | 1.53e-5 | 0.01 |
-
-要求 `isclose` 比例 ≥ 0.99，且每个元素的绝对误差 ≤ max_abs_error_limit 或 ≤ 32 ULP。ULP 以 golden 转为输出 dtype 后朝正无穷的间距计算。`o/s/sa` 分别检查 shape、dtype、device、可选输出和有限值，合法空输出在形状检查后通过。
-
-`--build-only` 只验证编译/打包/host，不能替代 A2 gate；A5 自动使用此范围。输出目录包含 `summary.json`、阶段日志、隔离观察和逐用例误差。独立实验 artifact 上传 summary，里面保留失败日志尾部、数值细节和库来源证据。复现命令见 [experimental README](../../experimental/README.md#ci-与复现)。
-
-reverse、更多 stream/并发、确定性、MSS、性能和 A5 数值仍不在此门禁覆盖范围；结果见[验证记录](../../experimental/validation.md)。
+- 正式和实验分别调度、分别发布状态；共用镜像和设备锁，容器、临时目录、构建产物与报告分开。
+- A2 验证 3 项安装拒绝、22 项装载隔离，并执行默认/inline 两种对拍；quick 各 3 条，full 各 209 条。A5 仅验证构建和 host 装载。
+- 实验状态为 `NPU CI / Experimental / A2 runtime + A5 build`；构建、验证、报告或上传失败均不能通过，旧提交结果不能用于当前提交。
+- `ops=` 请求只执行正式定向诊断；默认实验 CI 不依赖 ATK，备选工程使用方式见其 [README](../../tests/atk/fused_recurrent_rwkv8/README.md#atk-备选执行方式)。
+- 新 job 合入受保护 workflow 后生效，并需加入分支保护；合入前可按 [复现命令](../../experimental/README.md#ci-与复现) 直接运行，实测结果见 [验证记录](../../experimental/validation.md)。
 
 ## 8. 兼容与后续演进
 

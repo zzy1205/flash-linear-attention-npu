@@ -3,7 +3,7 @@
 > 当前实验 DUT 为 `fla_npu_experimental.fused_recurrent_rwkv8`，来源 PR #446。
 > 当前构建/精度/隔离结论集中在 [验证记录](../../../experimental/validation.md)；来源 PR 的历史结果不累计为当前通过数。
 > ATK 是手工复验备选，默认独立 CI 直接比较 NPU 与 CPU reference。
-> ATK worker 若提前导入 torch_npu，需在专用环境启用实验 bootstrap，详见[设计 §6.1](../../../docs/architecture/experimental%20构建适配设计.md#61-atk-worker-的准备备选复验)。
+> ATK worker 若提前导入 torch_npu，需在专用环境启用实验 bootstrap，详见[备选执行方式](#atk-备选执行方式)。
 > 实验 `.run` / wheel 安装与调用方式见 [experimental README](../../../experimental/README.md)。
 > 原 209 条用例不包含 reverse，只有最后 9 条明确覆盖 3 seeds；不据此声明完整正式验收。
 
@@ -87,6 +87,18 @@ FLA_NPU_STABLE_LAUNCH=inline \
 ```
 
 ## ATK 备选执行方式
+
+ATK 不负责安装实验 wheel 或选择 vendor。先准备专用实验环境：`ATK_ENV` 指向该环境，
+`CANN_ENV` 指向 toolkit 的环境脚本，`FLA_NPU_ENV` 指向实验 wheel 内的 vendor 环境脚本。
+`run_test_cpu.sh` 会依次激活环境、source CANN 和 vendor；CPU 标杆保持独立，NPU executor
+调用 `fla_npu_experimental`。
+
+worker 可能提前导入 `torch_npu`，因此在专用环境中安装 `00_experimental_atk_bootstrap.pth`，
+内容为 `import fla_npu_experimental`，并在任何 ATK/Python 进程启动前设置
+`FLA_NPU_DISABLE_PTH=1` 和实验 vendor 环境。bootstrap 仅用于备选验证，不随 wheel 发布，
+也不用于装载顺序矩阵；维护 wheel 时先禁用，装好匹配包并配置环境后再启用。
+远程或常驻 worker 必须在自身启动环境完成同样准备，控制端后来 source 不会更新它们。
+使用已安装 wheel，不能用源码 `PYTHONPATH` 替代；保留 CANN 自身的 `acl/tbe` 路径。
 
 ```bash
 bash tests/atk/run_test_cpu.sh -op=fused_recurrent_rwkv8 -npu_device_id=0

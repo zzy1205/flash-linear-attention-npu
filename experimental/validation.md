@@ -34,6 +34,27 @@ Linux 契约测试使用原生 Python 3.11 环境；NPU 完整入口及 PTA 使�
 
 本轮没有重跑 A5，也没有运行合入后的 GitHub 新 job；不得把本地入口通过等同于新 GitHub 门禁已经生效。
 
+## 2026-11-10 直接 aclnn 输出布局补测
+
+针对当前实现 `ef34d887`，复用上节同实现的实验 OPP，在 A2 / CANN 9.1.0 镜像内用 C++
+直接调用 `aclnnFusedRecurrentRwkv8GetWorkspaceSize` 和执行接口，不经过 Python adapter。
+这是一组入口布局补测，不计入原 209 条 Python 精度用例，也没有重跑全量门禁。
+
+固定输入：`B=H=1`、`T=2`、`K=V=8`，六个连续 FP32 输入全部为零；无初态，`scale=1`、
+`reverse=false`、`outputChunkState=false`、`outputSa=false`、`chunkLen=16`。
+两组输出逻辑 shape 都是 `(1,1,2,8)`，存储预填 7，数学期望为 16 个零。
+
+| 输出布局 | 存储与 strides（元素为单位） | 结果 |
+| --- | --- | --- |
+| 连续 | 分配 16 个 FP32；strides=`(16,16,8,1)` | workspace 查询返回 0，大小 1536 B；执行并同步后 16/16 输出为零 |
+| 非连续 view | 分配 32 个 FP32；strides=`(32,32,16,2)`，逻辑元素占用存储下标 `0,2,...,30`，无重叠、无越界 | workspace 查询返回 `561103`；消息 `Output tensor should not from workspace`；未调用执行接口 |
+
+这证明当前直接 aclnn 的合法非连续输出无法执行，不证明已发生静默结果错误。
+`sOut/saOut` 的同类处理仅做了代码检查，尚未分别复现。Python adapter 自行分配连续输出，
+没有调用方提供的 `out=`，因此已有 Python 精度结果与本限制并不矛盾。
+该写回逻辑在来源 PR #446 的 `049eb0d` 中已经存在，尚未修复；原因与修复方向见
+[设计 §6.2](../docs/architecture/experimental%20构建适配设计.md#62-rwkv8-直接-aclnn-的非连续输出限制)。
+
 ## 已有参考证据（不计为本轮重跑）
 
 | 版本/日期 | 环境 | 已证实范围 |
