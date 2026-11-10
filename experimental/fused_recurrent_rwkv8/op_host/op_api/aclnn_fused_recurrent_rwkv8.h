@@ -28,7 +28,7 @@ extern "C" {
  * @param [in] reverse: true 表示 T 维倒序递推（对齐 fla reverse）。
  * @param [in] outputChunkState: true 表示产出 chunk 快照 s（训练预埋，对齐官方 CUDA s_）。
  * @param [in] outputSa: true 表示产出每 token 的 sa（训练预埋，对齐官方 CUDA sa_）。
- * @param [in] chunkLen: s 快照间隔，必须 >= 1，默认 16（对齐官方 wkv7_cuda.cu backward 的
+ * @param [in] chunkLen: s 快照间隔，范围 [1, 4294967295]，默认 16（对齐官方 wkv7_cuda.cu backward 的
  *   chunk 重建粒度；非 16 值与官方 backward 不兼容）。
  * @param [out] out: 数据类型支持：同 q。shape (B,H,T,V)，必填。
  * @param [out] sOut: 数据类型支持：float32。shape (B,H,T//chunkLen,K,V)，outputChunkState=true 时必填。
