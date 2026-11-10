@@ -1,4 +1,11 @@
-# FusedRecurrentRwkv8 ATK 工程
+# FusedRecurrentRwkv8 experimental ATK 工程
+
+> 当前实验 DUT 为 `fla_npu_experimental.fused_recurrent_rwkv8`，来源 PR #446。
+> 当前构建/精度/隔离结论集中在 [验证记录](../../../experimental/validation.md)；来源 PR 的历史结果不累计为当前通过数。
+> ATK 是手工复验备选，独立手动脚本直接比较 NPU 与 CPU reference。
+> ATK worker 若提前导入 torch_npu，需在专用环境启用实验 bootstrap，详见[备选执行方式](#atk-备选执行方式)。
+> 实验 `.run` / wheel 安装与调用方式见 [experimental README](../../../experimental/README.md)。
+> 原 209 条用例不包含 reverse，只有最后 9 条明确覆盖 3 seeds；不据此声明完整正式验收。
 
 本目录提供 `fused_recurrent_rwkv8`（RWKV-v8 WKV7 逐 token 递推前向）的 ATK 单算子工程，
 包含 `executor_fused_recurrent_rwkv8.py`、`gen_fused_recurrent_rwkv8.py`、
@@ -18,8 +25,8 @@
 ## 标杆来源
 
 CPU 标杆内嵌在 `executor_fused_recurrent_rwkv8.py`（ATK 规范：executor 自包含），
-与 `fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/tests/pta/golden.py` 是同一份逻辑的
-两份拷贝——**修改金标算法时两处必须同步**。语义锚点：BlinkDL/RWKV-LM @ 9521024
+与 `experimental/_tests/rwkv8_reference.py` 是同一份逻辑的
+备选副本，手动独立对拍、PTA 和 dump 复用实验目录的 reference；**修改数学语义时须同步并通过一致性测试**。语义锚点：BlinkDL/RWKV-LM @ 9521024
 `RWKV-v8/cuda/wkv7_cuda.cu forward_kernel`；精度对拍锚点：fla @ a4a2624b DPLR。
 
 CPU 标杆、输入构造、run_cpu、run_npu 和 FunctionApi 均在本目录的
@@ -60,7 +67,38 @@ NPU 节点保持算子原始 dtype。ATK 按 (NPU dtype, golden FP32) 配对选�
 `{"acc": "mixed_tolerance_bm", "mem": 1.1, "perf": "not_key"}`；`fused_recurrent_rwkv8.yaml`
 的 `standard` 为 `{acc: mixed_tolerance_bm, perf: not_key}`。
 
-## 执行方式
+## 手动独立对拍
+
+手动独立对拍不依赖 ATK。`experimental/_tests/accuracy.py` 直接比较实验 wheel 的 NPU 输出与
+CPU reference，使用本目录精度 JSON（quick 前 3 条，full 全部 209 条），默认/inline 各执行一次。
+共享输入与 reference 在 `experimental/_tests/rwkv8_reference.py`，契约测试检查造数 AST 和与自包含 executor 的 FP32/FP64 输出一致性。FP64 递推后转 FP32、输出契约和上述混合容差保持不变。
+依赖在构建前检查，缺 ATK 仅告警；下列 ATK 工程保留为精度复验及确定性/MSS/性能备选。
+独立脚本的实测结果与边界见 [手动对拍验证记录](../../../experimental/validation.md)。
+
+在仅安装匹配实验 wheel 的独立环境中，启动新 shell、初始化 CANN 后手工执行：
+
+```bash
+export FLA_NPU_DISABLE_PTH=1 TORCH_DEVICE_BACKEND_AUTOLOAD=0
+E="$(python -c 'import importlib.util; from pathlib import Path; print(Path(importlib.util.find_spec("fla_npu_experimental").origin).parent)')"
+source "$E/opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash"
+python experimental/_tests/accuracy.py --mode quick --device 0 --output /tmp/rwkv8-queue.json
+FLA_NPU_STABLE_LAUNCH=inline \
+    python experimental/_tests/accuracy.py --mode full --device 0 --output /tmp/rwkv8-inline.json
+```
+
+## ATK 备选执行方式
+
+ATK 不负责安装实验 wheel 或选择 vendor。先准备专用实验环境：`ATK_ENV` 指向该环境，
+`CANN_ENV` 指向 toolkit 的环境脚本，`FLA_NPU_ENV` 指向实验 wheel 内的 vendor 环境脚本。
+`run_test_cpu.sh` 会依次激活环境、source CANN 和 vendor；CPU 标杆保持独立，NPU executor
+调用 `fla_npu_experimental`。
+
+worker 可能提前导入 `torch_npu`，因此在专用环境中安装 `00_experimental_atk_bootstrap.pth`，
+内容为 `import fla_npu_experimental`，并在任何 ATK/Python 进程启动前设置
+`FLA_NPU_DISABLE_PTH=1` 和实验 vendor 环境。bootstrap 仅用于备选验证，不随 wheel 发布，
+也不用于装载顺序矩阵；维护 wheel 时先禁用，装好匹配包并配置环境后再启用。
+远程或常驻 worker 必须在自身启动环境完成同样准备，控制端后来 source 不会更新它们。
+使用已安装 wheel，不能用源码 `PYTHONPATH` 替代；保留 CANN 自身的 `acl/tbe` 路径。
 
 ```bash
 bash tests/atk/run_test_cpu.sh -op=fused_recurrent_rwkv8 -npu_device_id=0
@@ -74,7 +112,7 @@ bash tests/atk/run_test_cpu.sh -op=fused_recurrent_rwkv8 -scope=gen_cases
 `gen_cases` 默认传入 `-dt 100 -en 0`。所有新增工程的 marker dtype 都保留两路生成入口，
 生成器会把不支持 FP16 的算子改回合法 BF16 用例。
 
-## 实测记录
+## 来源 PR 历史实测记录
 
 | 日期 | 精度 | 确定性 | 内存 | 性能 |
 |---|---|---|---|---|
