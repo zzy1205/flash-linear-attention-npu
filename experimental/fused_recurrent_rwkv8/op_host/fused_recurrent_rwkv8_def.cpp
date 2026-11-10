@@ -85,6 +85,9 @@ public:
             .NeedCheckSupportFlag(false)
             .ExtendCfgInfo("softsync.flag", "true");
         this->AICore().AddConfig("ascend910b", aicConfig);
+        // A5 is enabled for build validation. Numerical and performance
+        // qualification remains separate from compiling this configuration.
+        this->AICore().AddConfig("ascend950", aicConfig);
     }
 };
 
