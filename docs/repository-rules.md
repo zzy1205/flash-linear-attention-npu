@@ -87,21 +87,30 @@ GitHub 要求[手动运行 workflow 的用户具有仓库 write 权限](https://
 /run-npu-ci quick
 /run-npu-ci full
 /run-npu-ci quick ops=causal_conv1d,chunk_bwd_dv_local
+/run-npu-ci quick suite=experimental
 ```
 
 默认评论入口和新版 CI 仅接受 open、未合并且非草稿的 PR，目标分支必须受 GitHub 分支保护。`NPU CI` 的 workflow 文件位于该目标分支的 `.github/workflows/ci.yml`。默认分支上的 `NPU CI 评论分发` workflow 校验请求人后，通过 `workflow_dispatch.ref` 启动 PR 当前目标分支（`pr.base.ref`）上的 `ci.yml`，不支持 `ci_ref` 或 `branch` 覆盖。新版 CI 的 Actions 页面、CLI 和 REST 手动分发也必须选择 PR 当前目标分支。
 
-评论分发读取目标分支 workflow 声明的输入，仅发送其支持的参数；旧分支无需更新 CI 或声明新版契约即可触发。分发器按目标声明自动附带支持的 `expected_*` 版本快照，由目标 prepare 校验，用户无需手填。
+评论分发读取目标分支 workflow 声明的输入，仅发送其支持的参数；旧分支无需更新 CI 或声明新版契约即可触发正式 CI。显式请求 `suite=experimental` 而目标 workflow 未声明 `suite` 时，分发失败，不过滤参数后回落正式 CI。分发器按目标声明自动附带支持的 `expected_*` 版本快照，由目标 prepare 校验，用户无需手填。
 
 名单及 CI 修改作者 Admin 规则在默认评论入口校验，旧分支仍执行自己的权限检查和 CI 流程。例如旧 workflow 仍要求 `requested_by` 为 Admin 时，默认入口通过后也须满足该要求；不会自动获得新版名单、快照或重跑行为。
 
 带 `ops=` 的触发是编译定向诊断：只顺序执行第 01 项环境契约和第 02 项指定算子 OPP 构建，不执行 GDR 精度或后续安装分项；它只发布 `NPU CI / A2+A5 / 定向诊断`，不会写入或覆盖 01-06 正式门禁状态。用于合入门禁的运行必须省略 `ops`。
 
-如果当前 commit 的 6 个 aggregate context 已由同一次 A2+A5 run 通过，重复触发会被跳过，不会再次占用 NPU。同一 PR 的触发通过 workflow concurrency 串行化；同一 commit 已有 A2+A5 NPU CI 处于排队或运行中时，重复评论只会更新机器人评论为“已在运行”，不会启动新的 runner job。runner 宿主机还会用 `/tmp/fla-npu-ci-npu-<id>.lock` 对物理 NPU 加锁，避免多个任务抢同一张卡。
+如果当前 commit 的 6 个 aggregate context 已由同一次 A2+A5 run 通过，重复正式触发会被跳过，不会再次占用 NPU。同一 PR 按正式/实验集合区分 workflow concurrency 和结果复用，两套请求互不取消、互不借用结果；同一集合已在验证当前 commit 时，沿用已有任务。runner 宿主机还会用 `/tmp/fla-npu-ci-npu-<id>.lock` 对物理 NPU 加锁，避免多个任务抢同一张卡。
 
 仓库管理员应将上述 6 个 context 和 `CI 契约测试` 都配置为 `main` 分支必需状态检查。分项 context 使用带 `A2+A5` 的独立名称，避免旧版状态或 A2-only 历史成功状态被误认为已经覆盖当前门禁。`CI 契约测试` 在普通 GitHub-hosted runner 上自动执行 Python、Node 状态发布逻辑及分阶段调度测试，用于保护 CI 代码本身。
 
 NPU CI 的 self-hosted runner、Docker 镜像、`--privileged`、触发方式和排障步骤见 [`Fla-npu仓CI部署教程.md`](Fla-npu仓CI部署教程.md)。
+
+### Experimental 独立门禁
+
+不带 `suite` 的 quick/full 请求只运行正式 CI。使用 `/run-npu-ci quick suite=experimental` 单独运行 `experimental-npu` A2/A5 job，发布
+`NPU CI / Experimental / A2 runtime + A5 build`。实验 job 不依赖正式 wheel/GDR；A2 执行实验构建、安装/装载隔离和 CPU reference 精度，A5 只做构建/host。正式与实验有独立缓存、临时目录、artifact 和汇总，任何一套失败都不能由另一套成功代替。
+
+默认 pending 和分支保护配置仍包含实验状态；正式、实验分别触发、分别去重并写入各自状态。实验成功不改写正式状态，反之亦然。不支持 `suite=all`；`suite=experimental` 不能与 `ops=` 混用。
+`ci.yml` 与检查项定义合入受保护目标分支后，新 job 才能由该分支 workflow 调度；随后管理员使用下面的分支保护脚本同步新增 required context。合入前的真机直跑记录不能冒充 GitHub 新 job 已运行。
 
 ## 强行合入
 
@@ -111,4 +120,4 @@ NPU CI 的 self-hosted runner、Docker 镜像、`--privileged`、触发方式和
 GITHUB_TOKEN=<admin-token> scripts/github/apply_branch_protection.sh main
 ```
 
-该 token 需要具备仓库 administration 写权限。脚本会要求上述 6 个 NPU CI 分项状态和 `CI 契约测试` 都通过，并配置 2 个 approval、Code Owners review、stale review dismiss、Admin 也必须遵守分支保护，以及仅 `weinachuan` 具备 bypass。
+该 token 需要具备仓库 administration 写权限。脚本会要求正式 6 个 NPU CI 分项、Experimental 独立状态和 `CI 契约测试` 都通过，并配置 2 个 approval、Code Owners review、stale review dismiss、Admin 也必须遵守分支保护，以及仅 `weinachuan` 具备 bypass。

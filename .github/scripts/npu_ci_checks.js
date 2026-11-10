@@ -4,7 +4,8 @@ const definition = require('./npu_ci_checks.json');
 const DEFINITION_PATH = '.github/scripts/npu_ci_checks.json';
 
 function contextNames(config) {
-  const entries = config?.required;
+  const entries = Array.isArray(config?.required) && config.required.length
+    ? [...config.required, ...(config.experimental ? [config.experimental] : [])] : null;
   if (!Array.isArray(entries) || !entries.length || entries.some((entry) =>
     typeof entry?.context !== 'string' || !entry.context.startsWith('NPU CI / ') ||
     entry.context.trim() !== entry.context) ||
@@ -15,7 +16,7 @@ function contextNames(config) {
 }
 
 const contexts = contextNames(definition);
-const prepareChecks = contexts.map((context) =>
+const prepareChecks = definition.required.map(({ context }) =>
   [context, context.split(' / ').at(-1).replace(/^\d+\s+/, '')]);
 
 async function readBranchContexts({ github, context, pr }) {
@@ -42,5 +43,5 @@ async function readBranchContexts({ github, context, pr }) {
 
 module.exports = {
   required: definition.required, contexts, diagnostic: definition.diagnostic,
-  contractTest: definition.contract_test, prepareChecks, readBranchContexts,
+  experimental: definition.experimental, contractTest: definition.contract_test, prepareChecks, readBranchContexts,
 };

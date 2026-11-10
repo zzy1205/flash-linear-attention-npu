@@ -4,7 +4,7 @@
 
 > **NPU CI 不会在 PR 新建、重开或 push 新 commit 时自动执行。**
 >
-> PR 新建、重开或 push 新 commit 后，GitHub 会自动把当前 head commit 的以下 6 个 NPU CI 分项状态标记为 pending，说明该 commit 暂未执行双平台 NPU CI：
+> PR 新建、重开或 push 新 commit 后，GitHub 会自动把当前 head commit 的以下正式 6 项和实验独立状态标记为 pending，说明该 commit 暂未执行双平台 NPU CI：
 >
 > 1. `NPU CI / A2+A5 / 01 环境、wheel 与运行时契约`
 > 2. `NPU CI / A2+A5 / 02 全量 OPP 构建`
@@ -12,14 +12,16 @@
 > 4. `NPU CI / A2+A5 / 04 OPP 安装与 PyTorch 适配`
 > 5. `NPU CI / A2+A5 / 05 GDR Example/ST`
 > 6. `NPU CI / A2+A5 / 06 报告与 commit 校验`
+> 7. `NPU CI / Experimental / A2 runtime + A5 build`（独立实验 job，不依赖正式构建）
 >
-> 每个平台按上述顺序执行前 5 个分项；任一前置分项失败时，后续分项会标记为未执行，不再继续运行。任一平台 job 失败后，仍在排队或运行的另一平台 job 会被取消，避免继续占用 NPU；汇总结果仍按失败收敛。失败结果会保留关键报错，并给出带 `CI_STAGE=<分项>` 的容器复现命令。汇总任务最后执行第 6 项。合入前，当前 head commit 的 6 个状态和自动执行的 `CI 契约测试` 必须全部成功，并且满足 GitHub 分支保护要求的 2 个 approval；如果本 PR 后续更新了 commit，旧 commit 的 CI 结果不再有效，需要 CI 触发名单中的账号重新触发。即使已有 2 个 approval，只要当前 commit 未完成 NPU CI，仍不可合入（`weinachuan` 可按仓库保护规则 bypass）。
+> 每个平台按上述顺序执行前 5 个分项；任一前置分项失败时，后续分项会标记为未执行，不再继续运行。任一平台 job 失败后，仍在排队或运行的另一平台 job 会被取消，避免继续占用 NPU；汇总结果仍按失败收敛。失败结果会保留关键报错，并给出带 `CI_STAGE=<分项>` 的容器复现命令。汇总任务最后执行第 6 项。合入前，当前 head commit 的上述状态和自动执行的 `CI 契约测试` 必须全部成功，并且满足 GitHub 分支保护要求的 2 个 approval；如果本 PR 后续更新了 commit，旧 commit 的 CI 结果不再有效，需要 CI 触发名单中的账号重新触发。即使已有 2 个 approval，只要当前 commit 未完成 NPU CI，仍不可合入（`weinachuan` 可按仓库保护规则 bypass）。
 >
 > 触发方式：
 >
 > - 同时具有仓库 write 权限的 CI 名单账号可在 GitHub `Actions` 页面选择 `NPU CI`，将 `Branch` 设为本 PR 当前受保护的目标分支，点击 `Run workflow`，填写本 PR 编号。
 > - CI 名单账号可在 PR 评论区发送 `/run-npu-ci quick` 或 `/run-npu-ci full`，无需仓库 write 权限；仅使用 PR 当前受保护目标分支的 `ci.yml`，不支持 `ci_ref` 或 `branch` 覆盖。
-> - 同一 PR 的同一 commit 如果已有 NPU CI 在排队或运行，重复评论只会更新机器人评论，不会再次占用 NPU。
+> - 不带 `suite` 只跑正式 CI；实验门禁单独发送 `/run-npu-ci quick suite=experimental`，不支持 `suite=all`，不与 `ops=` 混用。两套结果分别发布；命令解析器和目标 workflow 更新后生效。
+> - 同一 PR、同一集合的同一 commit 如果已有 NPU CI 在排队或运行，重复评论只会更新机器人评论，不会再次占用 NPU；正式、实验集合互不取消。
 > - NPU CI 会执行 `ci/example_st_cases.json` 中启用的 Example/ST 用例；当前 `case1_current_default` 保持原始 shape。新增 GVA、`Vdim=256` 等场景时，请在用例文件中显式填写 `B`、`T`、`chunk_size`、`query_head`、`value_head`、`Kdim`、`Vdim` 等 shape 字段，以及 `gate_source`、`gate_function`、`initial_state`、`output_final_state`、`qk_l2norm` 等行为字段。
 > - Example ST 必须使用与平台匹配的已验证 PyTorch/`torch_npu` 组合；A2 与 A5 不得混用 wheel、Python ABI 或 CANN 镜像，也不要拉取 `op-plugin` 重新编译。
 > - 修改算子 `def`、`aclnn` 接口入参类型，或修改 `torch` 接口入参类型等导致不满足 ABI 一致性的改动，必须由 `weinachuan` 在当前 head commit 上检视通过；ABI 敏感路径已由 CODEOWNERS 指向 `weinachuan`。

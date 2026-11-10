@@ -55,7 +55,7 @@ const pr = {base:{ref:'release-v2',sha:settings.base_sha ?? 'c'.repeat(40)}};
             for index, entry in enumerate(DEFINITION["required"][:2], 1)
         ]}
         result = self.read_branch(files={DEFINITION_PATH: {"text": json.dumps(profile)}})
-        self.assertEqual(result["contexts"], [entry["context"] for entry in profile["required"]])
+        self.assertEqual(result["contexts"], [entry["context"] for entry in profile["required"]] + [profile["experimental"]["context"]])
         self.assertEqual(result["calls"], [{"owner":"example", "repo":"repo",
                                           "path":DEFINITION_PATH, "ref":"c" * 40}])
 

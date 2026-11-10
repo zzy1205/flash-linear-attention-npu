@@ -53,9 +53,9 @@ run_npu_fused_recurrent_rwkv8(Tensor q, Tensor w, Tensor k, Tensor v,
                               double scale, bool reverse,
                               bool output_chunk_state, bool output_sa,
                               int64_t chunk_len, int64_t stream) {
-  if (chunk_len < 1) {
+  if (chunk_len < 1 || chunk_len > 4294967295LL) {
     throw std::runtime_error(
-        "fla_npu(stable): npu_fused_recurrent_rwkv8 chunk_len must be >= 1");
+        "fla_npu(stable): npu_fused_recurrent_rwkv8 chunk_len must be in [1, 4294967295]");
   }
   const TensorMeta q_meta = meta_of(q);
   const TensorMeta v_meta = meta_of(v);
@@ -70,10 +70,11 @@ run_npu_fused_recurrent_rwkv8(Tensor q, Tensor w, Tensor k, Tensor v,
 
   // s: chunk snapshots (B,H,T//chunk_len,K,V) fp32, only when asked.
   std::optional<Tensor> s;
+  Tensor s_buf;  // Keep zero-slot backing storage alive through launch/enqueue.
   TensorMeta s_meta;  // stays undefined (null aclTensor) when output is off
   if (output_chunk_state) {
     const int64_t num_chunks = seqlen / chunk_len;
-    Tensor s_buf = allocate_sizes(
+    s_buf = allocate_sizes(
         {batch, heads, num_chunks > 0 ? num_chunks : 1, k_dim, v_dim}, kFloat,
         q_meta);
     s_meta = meta_of(s_buf);
@@ -81,7 +82,7 @@ run_npu_fused_recurrent_rwkv8(Tensor q, Tensor w, Tensor k, Tensor v,
       // T < chunk_len: hand aclnn the 0-slot view over the one-row buffer
       // (strides/storage_numel stay the buffer's, like the ctypes slice), and
       // return a genuinely 0-sized tensor.  The kernel writes nothing when
-      // there are no slots, so the unreturned buffer may leave the frame.
+      // there are no slots. Keep the buffer until launch/enqueue completes.
       s_meta.sizes[2] = 0;
       s = allocate_sizes({batch, heads, 0, k_dim, v_dim}, kFloat, q_meta);
     } else {
