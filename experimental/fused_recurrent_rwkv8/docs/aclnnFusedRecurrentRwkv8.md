@@ -1,17 +1,18 @@
 # aclnnFusedRecurrentRwkv8
 
-源码路径：`fla/ops/ascendc/rwkv8/fused_recurrent_rwkv8/`
+源码路径：`experimental/fused_recurrent_rwkv8/`
 
 ## 产品支持情况
 
 | 产品 | 是否支持 |
 |:---|:---:|
-| Atlas A2 训练系列产品/Atlas A2 推理系列产品（Ascend 910B） | √ |
+| Ascend 910B / A2 | 保留原配置；本迁移版本待回归 |
+| Ascend 950 / A5 | 本轮仅验证编译，未验证运行 |
 | 其他 | 未验证 |
 
 ## 功能说明
 
-- 接口功能：RWKV-v8（WKV7）fused recurrent 前向递推。逐 token 更新每个 (b, h) 的 (N, N) 状态并产生输出 `o`，可选携带初始状态、可选产出 chunk 快照 `s` 与每 token 的 `sa`（训练预埋）。
+- 接口功能：RWKV-v8（WKV7）fused recurrent 前向递推。逐 token 更新每个 (b, h) 的 (V, K) 状态并产生输出 `o`，可选携带初始状态、可选产出 chunk 快照 `s` 与每 token 的 `sa`（训练预埋）。
 
 - 计算公式（z/b 参数化，对齐 RWKV-LM `wkv7_cuda.cu` forward）：
 
@@ -20,14 +21,14 @@
   $$
 
   $$
-  S_t = S_{t-1} \odot \mathrm{diag}(decay_t) + sa_t\, b_t^T + v_t\, k_t^T,\quad decay_t = \exp(-\exp(w_t))
+  S_t = S_{t-1}\, \mathrm{diag}(decay_t) + sa_t\, b_t^T + v_t\, k_t^T,\quad decay_t = \exp(-\exp(w_t))
   $$
 
   $$
   o_t = S_t\, (q_t \cdot scale)
   $$
 
-  其中 $S \in R^{N \times N}$（行 = v/q 侧，列 = k/z 侧），$q_t, w_t, k_t, v_t, z_t, b_t \in R^N$。
+  其中 $S \in R^{V \times K}$（行 = value 侧，列 = key 侧），$q_t,w_t,k_t,z_t,b_t \in R^K$，$v_t \in R^V$。
 
 ## 函数原型
 
@@ -79,7 +80,7 @@ aclnnStatus aclnnFusedRecurrentRwkv8(
   | reverse | 属性 | true = T 维倒序递推（对齐 fla reverse） | BOOL | - | 标量 | - |
   | outputChunkState | 属性 | true = 产出 chunk 快照 s（训练预埋，默认 false） | BOOL | - | 标量 | - |
   | outputSa | 属性 | true = 产出每 token 的 sa（训练预埋，默认 false） | BOOL | - | 标量 | - |
-  | chunkLen | 属性 | s 快照间隔（默认 16，对齐官方 CUDA backward 的 chunk 重建粒度；非 16 值与官方 backward 不兼容） | INT64 | - | 标量，>= 1 | - |
+  | chunkLen | 属性 | s 快照间隔（默认 16，对齐官方 CUDA backward 的 chunk 重建粒度；非 16 值与官方 backward 不兼容） | INT64 | - | 标量，1 到 4294967295 | - |
   | out | 输出 | 公式中的 o | 同 q | ND | (B, H, T, V) | × |
   | sOut | 输出 | chunk state 快照，**官方 CUDA 转置布局**（快照 [j][i]=S[i][j]，UB 中 S^T 朝向即官方布局） | FLOAT32 | ND | (B, H, T//chunkLen, K, V) | outputChunkState=true 时必填 |
   | saOut | 输出 | 每 token 移除读出 state@z（更新前） | FLOAT32 | ND | (B, H, T, V) | outputSa=true 时必填 |
@@ -91,6 +92,7 @@ aclnnStatus aclnnFusedRecurrentRwkv8(
   - initialState/sOut/saOut 恒为 float32（递推累加全程 fp32，state 不降精度）。
   - sOut：每满 chunkLen 个 token 拍一次快照（chunkLen 默认 16，对齐官方 CUDA backward 的 chunk 重建粒度）；T 非 chunkLen 倍数时 floor(T/chunkLen) 个快照，尾部不满的一段无快照；T<chunkLen 时为零尺寸。
   - sOut/saOut 默认关闭：关闭时传 nullptr 即可，kernel 跳过写出（推理零带宽开销）。
+  - chunkLen 必须落在 `[1,4294967295]`，确保能无损写入 uint32 tiling 字段；越界时 aclnn 返回 `ACLNN_ERR_PARAM_INVALID`，tiling 返回 `GRAPH_FAILED`，Python 抛出 `RuntimeError`，不截断或归一化。
   - K 需为 8 的倍数且 ≤ 128（K 维不切分，K×V 的 state 须整体放入单核 UB）。
   - V 需为 8 的倍数且 ≤ 128（V 维不切分，与 K 同上由 UB 预算决定）。
   - B、H 需满足 B <= 65535、H <= 65535 且 B*H <= 65535（一个逻辑核负责一个 (b,h) 账本，blockDim 受 CANN 约定的逻辑核数上限约束）；T > 2^20（1048576）由 tiling 拦截并返回 GRAPH_FAILED，该值仅为拦截上界（与 kernel `sane_` 的 `T_` 上限一致）；实测最大 T = 4096，更大范围受时间限制未做测试。B/H/T 均为正整数且无需对齐。
@@ -112,5 +114,6 @@ aclnnStatus aclnnFusedRecurrentRwkv8(
 参见 `examples/test_aclnn_fused_recurrent_rwkv8.cpp`（自包含：内置输入生成 + CPU golden + rel-RMSE 对拍），通过以下命令构建运行：
 
 ```bash
-bash build.sh --run_example fused_recurrent_rwkv8 eager cust --vendor_name=fla_npu --soc=ascend910b
+# 待有 A2 环境后执行；使用独立实验 OPP。
+bash build.sh --experimental --run_example fused_recurrent_rwkv8 eager cust --soc=ascend910b
 ```
