@@ -1,6 +1,6 @@
 """fused_recurrent_rwkv8 (WKV7) PTA 精度测试。
 
-NPU 输出对拍 CPU 金标（golden.py），用例取自上级目录 cases.py
+NPU 输出对拍 共享 CPU reference 的 FP32 兼容入口，用例取自上级目录 cases.py
 （正例全跑 + 负例校验拒绝路径）。plain script，非 pytest：
 
     python test_accuracy.py            # 默认 npu:0
@@ -10,17 +10,19 @@ import os
 import sys
 from pathlib import Path
 
+# Validate the experimental OPP before CANN/torch_npu initializes.
+from fla_npu_experimental import fused_recurrent_rwkv8
+
 import torch
 import torch_npu  # noqa: F401  注册 NPU 后端
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from golden import fused_recurrent_rwkv8_golden
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_tests"))
+from rwkv8_reference import fused_recurrent_rwkv8_golden
 from utils import compare_rel_rmse
 from cases import CASES, REL_RMSE_THRESHOLD
-
-from fla_npu.ops import ascendc as ascendc_ops
 
 DTYPES = {"float32": torch.float32, "float16": torch.float16, "bfloat16": torch.bfloat16}
 
@@ -64,7 +66,7 @@ def run_golden(case, inputs, initial_state):
 def run_npu(case, inputs, initial_state, device):
     npu_inputs = [x.to(device) for x in inputs]
     init_npu = initial_state.to(device) if initial_state is not None else None
-    out = ascendc_ops.fused_recurrent_rwkv8(
+    out = fused_recurrent_rwkv8(
         *npu_inputs,
         scale=case["scale"],
         initial_state=init_npu,
@@ -112,7 +114,7 @@ def run_negative_case(case, device):
                                     dtype=torch.float32)
 
     try:
-        ascendc_ops.fused_recurrent_rwkv8(
+        fused_recurrent_rwkv8(
             q.to(device), w.to(device), k.to(device), v.to(device),
             z.to(device), b.to(device),
             scale=case["scale"],

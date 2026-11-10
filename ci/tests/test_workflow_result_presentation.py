@@ -31,6 +31,7 @@ CHECKS_SCRIPT_PATH = CHECKS_CONFIG_PATH.with_suffix(".js")
 CHECKS_CONFIG = json.loads(CHECKS_CONFIG_PATH.read_text(encoding="utf-8"))
 STAGE_KEYS = tuple(check["key"] for check in CHECKS_CONFIG["required"][:-1])
 STATUS_CONTEXTS = tuple(check["context"] for check in CHECKS_CONFIG["required"])
+ALL_STATUS_CONTEXTS = STATUS_CONTEXTS + (CHECKS_CONFIG["experimental"]["context"],)
 SCOPED_STATUS_CONTEXT = CHECKS_CONFIG["diagnostic"]["context"]
 CONTRACT_TEST_CONTEXT = CHECKS_CONFIG["contract_test"]
 
@@ -809,9 +810,9 @@ globalThis.core = {
             ]
             return completed, records
 
-    def _assert_statuses(self, records, expected_states):
+    def _assert_statuses(self, records, expected_states, contexts=STATUS_CONTEXTS):
         statuses = [item["payload"] for item in records if item["kind"] == "status"]
-        self.assertEqual([item["context"] for item in statuses], list(STATUS_CONTEXTS))
+        self.assertEqual([item["context"] for item in statuses], list(contexts))
         self.assertEqual([item["state"] for item in statuses], expected_states)
         self.assertNotIn("pending", [item["state"] for item in statuses])
 
@@ -1328,7 +1329,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
         payload = record["payload"]
         self.assertEqual(payload["required_status_checks"], {
             "strict": True,
-            "contexts": [item["context"] for item in profile["required"]] + [profile["contract_test"]],
+            "contexts": [item["context"] for item in profile["required"]] + [profile["experimental"]["context"], profile["contract_test"]],
         })
         self.assertNotIn(profile["diagnostic"]["context"], payload["required_status_checks"]["contexts"])
         self.assertEqual(payload["required_pull_request_reviews"], {
@@ -1439,13 +1440,13 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                     "target_url": target_url,
                     "created_at": f"2026-09-14T00:00:{index:02d}Z",
                 }
-                for index, context_name in enumerate(STATUS_CONTEXTS)
+                for index, context_name in enumerate(ALL_STATUS_CONTEXTS)
                 if context_name != missing_context
             ]
 
         variants = {
-            "failed": statuses_with(failed_context=STATUS_CONTEXTS[2]),
-            "missing": statuses_with(missing_context=STATUS_CONTEXTS[2]),
+            "failed": statuses_with(failed_context=ALL_STATUS_CONTEXTS[2]),
+            "missing": statuses_with(missing_context=ALL_STATUS_CONTEXTS[2]),
         }
         for name, statuses in variants.items():
             with self.subTest(name=name):
@@ -1458,7 +1459,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                 }
                 self.assertEqual(outputs["should_run"], "true")
                 pending = [item for item in records if item["kind"] == "status"]
-                self.assertEqual(len(pending), 6)
+                self.assertEqual(len(pending), len(ALL_STATUS_CONTEXTS))
                 self.assertTrue(all(item["payload"]["state"] == "pending" for item in pending))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
@@ -1473,7 +1474,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                 "target_url": target_url,
                 "created_at": f"2026-09-14T00:00:{index:02d}Z",
             }
-            for index, context_name in enumerate(STATUS_CONTEXTS)
+            for index, context_name in enumerate(ALL_STATUS_CONTEXTS)
         ]
 
         completed, records = self._run_prepare_script(statuses)
@@ -1507,7 +1508,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
         }
         for ops in ("", "chunk_fwd_o"):
             key = hashlib.sha256(ops.encode()).hexdigest()[:10] if ops else "all"
-            contexts = [SCOPED_STATUS_CONTEXT] if ops else STATUS_CONTEXTS
+            contexts = [SCOPED_STATUS_CONTEXT] if ops else ALL_STATUS_CONTEXTS
             for state in ("success", "pending"):
                 statuses = [{
                     "id": index + 1, "context": status_context, "state": state,
@@ -1542,7 +1543,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                 "context": status_context, "state": "success",
                 "description": "result (quick,all,A2+A5)",
                 "target_url": target_url, "created_at": "2026-09-14T00:00:00Z",
-            } for status_context in STATUS_CONTEXTS]
+            } for status_context in ALL_STATUS_CONTEXTS]
             with self.subTest(target_url=target_url):
                 completed, records = self._run_prepare_script(statuses)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1598,7 +1599,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
             author_permission="write")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertNotIn({"kind": "output", "payload": {"name": "should_run", "value": "true"}}, records)
-        self._assert_statuses(records, ["failure"] * len(STATUS_CONTEXTS))
+        self._assert_statuses(records, ["failure"] * len(ALL_STATUS_CONTEXTS), ALL_STATUS_CONTEXTS)
         failures = [item["payload"] for item in records if item["kind"] == "failed"]
         self.assertTrue(any("ci-admin-author" in message and "Admin" in message for message in failures))
         self.assertEqual([item["payload"] for item in records if item["kind"] == "permission"],
@@ -1666,7 +1667,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
         }
         self.assertEqual(outputs["should_run"], "true")
         pending = [item for item in records if item["kind"] == "status"]
-        self.assertEqual(len(pending), len(STATUS_CONTEXTS))
+        self.assertEqual(len(pending), len(ALL_STATUS_CONTEXTS))
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required")
     def test_prepare_rerun_does_not_reuse_previous_attempt_success(self):
@@ -1680,7 +1681,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
                 "target_url": target_url,
                 "created_at": f"2026-09-14T00:00:{index:02d}Z",
             }
-            for index, context_name in enumerate(STATUS_CONTEXTS)
+            for index, context_name in enumerate(ALL_STATUS_CONTEXTS)
         ]
         completed, records = self._run_prepare_script(
             previous_success,
@@ -1700,7 +1701,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
         }
         self.assertEqual(outputs["should_run"], "true")
         pending = [item for item in records if item["kind"] == "status"]
-        self.assertEqual(len(pending), len(STATUS_CONTEXTS))
+        self.assertEqual(len(pending), len(ALL_STATUS_CONTEXTS))
 
     def test_publisher_writes_final_status_after_stage_statuses(self):
         script = self.finalize_script

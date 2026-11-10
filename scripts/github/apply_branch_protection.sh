@@ -21,7 +21,7 @@ from pathlib import Path
 checks = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 if not isinstance(checks["required"], list) or not checks["required"]:
     raise SystemExit("The CI profile must define required checks.")
-contexts = [item["context"] for item in checks["required"]] + [checks["contract_test"]]
+contexts = [item["context"] for item in checks["required"]] + [checks["experimental"]["context"], checks["contract_test"]]
 if any(not isinstance(name, str) or not name.strip() for name in contexts) or len(set(contexts)) != len(contexts):
     raise SystemExit("CI required check names must be nonempty, unique strings.")
 
