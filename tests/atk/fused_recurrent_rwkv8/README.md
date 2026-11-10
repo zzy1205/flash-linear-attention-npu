@@ -1,21 +1,11 @@
 # FusedRecurrentRwkv8 experimental ATK 工程
 
-> 当前状态：从 PR #446 `103490da248c81b6a77824fc13c153ad3a0931d2` 迁入，
-> DUT 改为 `fla_npu_experimental.fused_recurrent_rwkv8`，增加返回槽位/shape/dtype/device 检查；CPU 标杆、造数和原 JSON 保持不变。
-> 下文“来源 PR 历史实测记录”不计入本轮通过数。2026-11-03 A2 单算子 wheel 已通过 209/209 精度用例，
-> 全量 wheel 的默认队列/inline 各通过 3/3 子集用例；未运行确定性、内存或性能矩阵。
-> 环境为 910B2 / CANN 9.0.0 / torch 2.12.0+cpu / torch_npu 2.12.0 / ATK 26.9.8。
-> 证据见 [A2 验证记录](../../../experimental/validation-a2-20261103.md)，加载隔离与阶段覆盖见
-> [A2 验证方案](../../../experimental/_tests/a2_isolation/README.md)。
-> 移除框架样例后的新制品回归见 [2026-11-06 记录](../../../experimental/validation-rwkv-only-20261106.md)，
-> 历史 209 条结果不计为本轮重跑。
->
-> ATK 及其 worker 可能先导入 torch_npu。应在专用测试虚拟环境中配置启动前的实验 bootstrap
-> （该方案中的准备步骤），不能删除实验 loader 的初始化顺序校验来绕过它。
-> 用 `FLA_NPU_ENV` 显式指定本 wheel 的实验 vendor `set_env.bash`，防止统一入口重设为正式 OPP。
->
-> 原 209 条精度用例没有 reverse 属性，不能算作 reverse 覆盖；只有最后 9 条明确按 3 seeds
-> 组织。新增逻辑分支须按当前 ATK 规范补齐每分支 3 个种子和校准记录，才可完成正式验收。
+> 当前实验 DUT 为 `fla_npu_experimental.fused_recurrent_rwkv8`，来源 PR #446。
+> 当前构建/精度/隔离结论集中在 [验证记录](../../../experimental/validation.md)；来源 PR 的历史结果不累计为当前通过数。
+> ATK 是手工复验备选，默认独立 CI 直接比较 NPU 与 CPU reference。
+> ATK worker 若提前导入 torch_npu，需在专用环境启用实验 bootstrap，详见[设计 §6.1](../../../docs/architecture/experimental%20构建适配设计.md#61-atk-worker-的准备备选复验)。
+> 实验 `.run` / wheel 安装与调用方式见 [experimental README](../../../experimental/README.md)。
+> 原 209 条用例不包含 reverse，只有最后 9 条明确覆盖 3 seeds；不据此声明完整正式验收。
 
 本目录提供 `fused_recurrent_rwkv8`（RWKV-v8 WKV7 逐 token 递推前向）的 ATK 单算子工程，
 包含 `executor_fused_recurrent_rwkv8.py`、`gen_fused_recurrent_rwkv8.py`、
@@ -35,8 +25,8 @@
 ## 标杆来源
 
 CPU 标杆内嵌在 `executor_fused_recurrent_rwkv8.py`（ATK 规范：executor 自包含），
-与 `experimental/fused_recurrent_rwkv8/tests/pta/golden.py` 是同一份逻辑的
-两份拷贝——**修改金标算法时两处必须同步**。语义锚点：BlinkDL/RWKV-LM @ 9521024
+与 `experimental/_tests/rwkv8_reference.py` 是同一份逻辑的
+备选副本，默认 CI、PTA 和 dump 复用实验目录的 reference；**修改数学语义时须同步并通过一致性测试**。语义锚点：BlinkDL/RWKV-LM @ 9521024
 `RWKV-v8/cuda/wkv7_cuda.cu forward_kernel`；精度对拍锚点：fla @ a4a2624b DPLR。
 
 CPU 标杆、输入构造、run_cpu、run_npu 和 FunctionApi 均在本目录的
@@ -81,10 +71,9 @@ NPU 节点保持算子原始 dtype。ATK 按 (NPU dtype, golden FP32) 配对选�
 
 默认 NPU CI 不依赖 ATK。`ci/run_experimental_accuracy.py` 直接比较实验 wheel 的 NPU 输出与
 CPU reference，使用本目录精度 JSON（quick 前 3 条，full 全部 209 条），默认/inline 各执行一次。
-输入与 reference 的独立副本在 `experimental/_tests/rwkv8_reference.py`，契约测试检查其与
-自包含 executor 的 AST 一致性。FP64 递推后转 FP32、输出契约和上述混合容差保持不变。
+共享输入与 reference 在 `experimental/_tests/rwkv8_reference.py`，契约测试检查造数 AST 和与自包含 executor 的 FP32/FP64 输出一致性。FP64 递推后转 FP32、输出契约和上述混合容差保持不变。
 依赖在构建前检查，缺 ATK 仅告警；下列 ATK 工程保留为精度复验及确定性/MSS/性能备选。
-独立脚本的实测结果与边界见 [CI 对拍验证记录](../../../experimental/validation-reference-ci-20261109.md)。
+独立脚本的实测结果与边界见 [CI 对拍验证记录](../../../experimental/validation.md)。
 
 在仅安装匹配实验 wheel 的独立环境中，启动新 shell、初始化 CANN 后手工执行：
 

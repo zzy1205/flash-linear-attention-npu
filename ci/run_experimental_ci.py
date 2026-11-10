@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Experimental checks inside the existing NPU CI test stage (fail closed)."""
+"""Independent experimental build, installation, load and CPU-reference gate."""
 from __future__ import annotations
 
 import argparse
@@ -11,12 +11,11 @@ import shutil
 import site
 import subprocess
 import sys
-import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 OP = "fused_recurrent_rwkv8"
-PHASES = ("dependencies", "build-host", "profiles", "load-isolation", "accuracy-queue", "accuracy-inline")
+PHASES = ("dependencies", "build-host", "load-isolation", "accuracy-queue", "accuracy-inline")
 
 
 def module(path):
@@ -26,12 +25,12 @@ def module(path):
     return value
 
 
-ISOLATION = module(ROOT / "experimental/_tests/a2_isolation/run.py")
+ISOLATION = module(ROOT / "experimental/_tests/isolation.py")
 
 
 def clean_environment(case, profile):
     env = ISOLATION.environment(case, profile)
-    # The preceding formal GDR step exports its vendor library directory.
+    # Ignore an inherited FLA vendor library search path.
     # Keep toolkit/driver dependencies, but do not let ELF lookup reuse a FLA vendor.
     if "LD_LIBRARY_PATH" in env:
         env["LD_LIBRARY_PATH"] = os.pathsep.join(
@@ -62,9 +61,9 @@ def check_accuracy(result, expected):
 
 
 class Validation:
-    def __init__(self, output, stage_report=None):
+    def __init__(self, output, *, build_only=False):
         self.output = output
-        self.stage_report = stage_report
+        self.build_only = build_only or os.environ.get("CI_SOC", "ascend910b") == "ascend950"
         self.soc = os.environ.get("CI_SOC", "ascend910b")
         self.mode = os.environ.get("CI_MODE", "quick")
         self.env = clean_environment({"mode": "stable", "scenario": "stable"}, {})
@@ -74,17 +73,16 @@ class Validation:
                        "soc": self.soc, "mode": self.mode, "output": str(output),
                        "device": os.environ.get("CI_CONTAINER_DEVICE", "0"),
                        "head_sha": os.environ.get("CI_ACCURACY_HEAD_SHA", ""),
+                       "run_id": os.environ.get("CI_ACCURACY_RUN_ID", ""),
+                       "run_attempt": os.environ.get("CI_ACCURACY_RUN_ATTEMPT", ""),
+                       "platform": os.environ.get("CI_ACCURACY_PLATFORM", ""),
+                       "build_only": self.build_only,
                        "phases": {name: {"status": "not_run"} for name in PHASES}}
-        self.profiles = {}
+        self.profile = {}
         self.log = None
 
     def save(self):
         write_json(self.output / "summary.json", self.report)
-        if self.stage_report:
-            payload = json.loads(self.stage_report.read_text(encoding="utf-8"))
-            # Existing main workflow uploads this file; retain its v1 stage schema.
-            payload["experimental"] = self.report
-            write_json(self.stage_report, payload)
 
     def run(self, command, env=None, timeout=7200):
         subprocess.run(list(map(str, command)), cwd=ROOT, env=env or self.env,
@@ -124,25 +122,38 @@ class Validation:
         return result
 
     def build(self):
-        products = ROOT / "build_out/experimental-products.json"
-        products.unlink(missing_ok=True)
-        self.run(["bash", "ci/run_experimental_validation.sh"],
-                 {**self.env, "CI_EXPERIMENTAL_OPS": "all", "CI_EXPERIMENTAL_RUNTIME": "false"})
-        self.products = json.loads(products.read_text(encoding="utf-8"))
-        result = {"products": self.products}
-        for name in ("package", "load"):
-            result[name] = json.loads((ROOT / f"build_out/experimental-{name}-audit.json").read_text())
-        shutil.copy2(ROOT / "build/experimental-build-manifest.json", self.output)
-        return result
+        if not self.env.get("ASCEND_HOME_PATH"):
+            raise RuntimeError("Source the CANN toolkit set_env.sh first")
+        self.run(["bash", "ci/prepare_ci_cache.sh"])
+        self.run(["bash", "build.sh", "--pkg", "--experimental", "--soc=" + self.soc,
+                  "--ops=all", "-j" + (os.environ.get("CI_JOBS") or "4")])
+        run_package = ROOT / ("build_out/fla_npu_experimental_linux-" + os.uname().machine + ".run")
+        install = self.output / "opp"
+        install.mkdir()
+        self.run([run_package, "--install-path=" + str(install), "--quiet"])
+        manifest = ROOT / "build/experimental-build-manifest.json"
+        audit = module(ROOT / "scripts/experimental_manifest.py")
+        package = audit.audit_package(install, self.soc, manifest)
+        wheel_root = self.output / "wheel"
+        self.run([sys.executable, "experimental/_framework/build.py", "wheel", "--manifest", manifest,
+                  "--install-root", install, "--output", wheel_root])
+        wheels = list(wheel_root.glob("*.whl"))
+        if len(wheels) != 1:
+            raise RuntimeError("Expected exactly one experimental wheel")
+        self.products = {"opp": str(install), "wheel": str(wheels[0])}
+        self.prepare()
+        env = clean_environment({"mode": "experimental", "scenario": "experimental"}, self.profile)
+        self.run([self.profile["python"], ROOT / "ci/experimental_load_smoke.py"], env)
+        shutil.copy2(manifest, self.output)
+        return {"products": self.products, "package": package, "host_loaded": True}
 
-    def profile(self, name, stable=False, experimental=False):
-        env_root = self.output / "envs" / name
+    def prepare(self):
+        env_root = self.output / "env"
         self.run([sys.executable, "-m", "venv", "--without-pip", env_root])
         python = env_root / "bin/python"
         purelib = Path(subprocess.check_output([str(python), "-c",
             "import sysconfig; print(sysconfig.get_path('purelib'))"], env=self.env, text=True).strip())
-        # Share dependencies, never the parent site's FLA packages or startup hooks.
-        # --system-site-packages would invalidate the 'only one wheel' cases.
+        # Share dependencies without inheriting any FLA package or startup hook.
         for directory in site.getsitepackages():
             if not Path(directory).is_dir():
                 continue
@@ -152,69 +163,44 @@ class Validation:
                         or entry.suffix == ".pth" or (purelib / entry.name).exists()):
                     continue
                 (purelib / entry.name).symlink_to(entry, target_is_directory=entry.is_dir())
-        profile = {"python": str(python)}
-        if stable:
-            # Reuse the exact installed formal artifact tested by the preceding stage.
-            source = self.stable.parent
-            for entry in source.glob("fla_npu*"):
-                target = purelib / entry.name
-                if entry.is_dir():
-                    shutil.copytree(entry, target, symlinks=True,
-                                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-                else:
-                    shutil.copy2(entry, target)
-            profile["stable_package"] = str(purelib / "fla_npu")
-        if experimental:
-            self.run([sys.executable, "-m", "pip", "install", "--no-deps", "--no-index",
-                      "--target", purelib, self.products["wheel"]])
-            profile["experimental_package"] = str(purelib / "fla_npu_experimental")
-        self.profiles[name] = profile
-        return env_root, purelib
-
-    def prepare(self):
-        spec = importlib.util.find_spec("fla_npu")
-        if spec is None or not spec.origin:
-            raise RuntimeError("The formal torch-adapter stage must install fla_npu first")
-        self.stable = Path(spec.origin).parent.resolve()
-        self.before = ISOLATION.snapshot([self.stable])
-        for name, stable, experimental in (("stable_only", True, False), ("experimental_only", False, True),
-                ("combined", True, True), ("overlay", True, True)):
-            self.profile(name, stable, experimental)
-        # There is currently exactly one experimental operator. Reject silently
-        # treating a future multi-op wheel as a single-op selection test.
-        build = json.loads((Path(self.profiles["experimental_only"]["experimental_package"]) / "_build.json").read_text())
+        self.run([sys.executable, "-m", "pip", "install", "--no-deps", "--no-index",
+                  "--target", purelib, self.products["wheel"]])
+        self.profile = {"python": str(python), "experimental_package": str(purelib / "fla_npu_experimental"),
+                        "external_experimental_opp": self.products["opp"],
+                        "device": int(self.report["device"]), "timeout": 120}
+        build = json.loads((purelib / "fla_npu_experimental/_build.json").read_text())
         if [op["name"] for op in build["operators"]] != [OP]:
-            raise RuntimeError("Update CI selection/accuracy coverage for the new experimental operator set")
-        self.profiles["single"] = self.profiles["experimental_only"].copy()
-        combined = self.profiles["combined"]
-        combined["external_experimental_opp"] = self.products["opp"]
-        self.run([combined["python"], "-m", "fla_npu_opp_manage", "--remove-overlay",
-                  "--overlay-name", "fla_npu_overlay_unused_fixture"])
-        overlay = self.profiles["overlay"]
-        self.run([overlay["python"], "-m", "fla_npu_opp_manage", "--overlay", "--source",
-                  self.stable / "opp/vendors/fla_npu_transformer", "--overlay-name", "fla_npu_overlay_control"])
-        overlay["overlay_vendor"] = str(Path(overlay["stable_package"]) / "opp/vendors/fla_npu_overlay_control")
-        config = {"device": int(os.environ.get("CI_CONTAINER_DEVICE", "0")), "timeout": 120,
-                  "protected_roots": [str(self.stable)], "profiles": self.profiles}
-        write_json(self.output / "profiles.json", config)
-        return {"profiles": list(self.profiles), "formal_artifact": str(self.stable)}
+            raise RuntimeError("Update CI accuracy coverage for the new experimental operator set")
 
     def isolation(self):
-        summary = self.output / "isolation/summary.json"
-        try:
-            self.run([sys.executable, ROOT / "experimental/_tests/a2_isolation/run.py",
-                      "--config", self.output / "profiles.json", "--output", self.output / "isolation"])
-        finally:
-            if summary.exists():
-                # Keep negative-case diagnostics in the uploaded report even on failure.
-                self.report["phases"]["load-isolation"]["result"] = json.loads(summary.read_text())
-        result = json.loads(summary.read_text())
-        if not result["complete"] or result["counts"] != {"PASS": 28, "FAIL": 0, "BLOCKED": 0}:
-            raise RuntimeError("Incomplete A2 load isolation matrix")
+        # These are rejection fixtures, never a compiled/installed formal operator.
+        stable = self.output / "protected/fla_npu"
+        library = stable / "opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+        library.parent.mkdir(parents=True)
+        (stable / "__init__.py").write_text("# protected formal-package fixture\n")
+        source = self.output / "foreign.c"
+        source.write_text("void isolation_fixture(void) {}\n")
+        self.run(["gcc", "-shared", "-fPIC", source, "-o", library])
+        shutil.copy2(library, stable / "libfla_npu_stable.so")
+        self.profile["stable_package"] = str(stable)
+        before = ISOLATION.snapshot([stable])
+        run_package = ROOT / ("build_out/fla_npu_experimental_linux-" + os.uname().machine + ".run")
+        for target in (stable, stable / "opp", stable / "new-empty-dir"):
+            result = subprocess.run([str(run_package), "--install-path=" + str(target), "--quiet"],
+                                    cwd=ROOT, env=self.env, text=True, capture_output=True, timeout=120)
+            if result.returncode == 0 or "stable" not in (result.stdout + result.stderr).lower():
+                raise RuntimeError("Experimental run did not reject a formal-package destination: " + str(target))
+        if before != ISOLATION.snapshot([stable]):
+            raise RuntimeError("Rejected run installation changed the protected formal-package fixture")
+        result = ISOLATION.validate(self.profile, self.output / "isolation")
+        self.report["phases"]["load-isolation"]["result"] = result
+        if not result["complete"] or result["counts"] != {"PASS": len(ISOLATION.CASES), "FAIL": 0, "BLOCKED": 0}:
+            raise RuntimeError("Incomplete experimental load isolation matrix")
+        result["installation_rejections"] = 3
         return result
 
     def accuracy(self, launch):
-        profile = self.profiles["experimental_only"]
+        profile = self.profile
         env = clean_environment({"mode": "experimental", "scenario": "experimental"}, profile)
         env.update(OMP_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4", MKL_NUM_THREADS="4",
                    FLA_A2_TRACE_DIR=str(self.output / ("accuracy-" + launch + "-trace")))
@@ -246,14 +232,13 @@ class Validation:
                 raise ValueError(f"Unsupported experimental CI configuration: {self.soc}/{self.mode}")
             self.phase("dependencies", self.dependencies)
             self.phase("build-host", self.build)
-            if self.soc == "ascend910b":
-                self.phase("profiles", self.prepare)
+            if not self.build_only:
                 self.phase("load-isolation", self.isolation)
                 for launch in ("queue", "inline"):
                     self.phase("accuracy-" + launch, lambda launch=launch: self.accuracy(launch))
             else:
                 for name in PHASES[2:]:
-                    self.report["phases"][name] = {"status": "skipped", "reason": "Runtime suite supports A2 only"}
+                    self.report["phases"][name] = {"status": "skipped", "reason": "Build-only validation; NPU accuracy was not run"}
             self.report.update(complete=True, status="success")
         except Exception as exc:
             self.report.update(status="failure", reason=str(exc))
@@ -261,11 +246,6 @@ class Validation:
                 if item["status"] == "not_run":
                     item.update(status="not_run", reason="Previous experimental check failed")
         finally:
-            if hasattr(self, "before"):
-                unchanged = self.before == ISOLATION.snapshot([self.stable])
-                self.report["formal_payload_unchanged"] = unchanged
-                if not unchanged:
-                    self.report.update(complete=False, status="failure", reason="Formal installed payload changed")
             self.save()
         print(f"[experimental][CI] {self.report['status']}: {self.output / 'summary.json'}", flush=True)
         if self.report.get("reason"):
@@ -275,12 +255,12 @@ class Validation:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage-report", type=Path)
+    parser.add_argument("--build-only", action="store_true", help="Build/package/host checks; no NPU accuracy claim")
+    parser.add_argument("--output", type=Path, default=Path(".ci-tmp/experimental"))
     args = parser.parse_args()
-    parent = Path(os.environ.get("CI_TMPDIR") or ROOT / ".ci-tmp").resolve()
-    parent.mkdir(parents=True, exist_ok=True)
-    output = Path(tempfile.mkdtemp(prefix="experimental-ci-", dir=parent))
-    return Validation(output, args.stage_report).execute()
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=False)
+    return Validation(output, build_only=args.build_only).execute()
 
 
 if __name__ == "__main__":

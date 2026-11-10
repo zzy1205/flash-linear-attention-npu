@@ -19,7 +19,7 @@
     "cann": "9.0.0",
     "accuracy_passed": 209,
     "accuracy_total": 209,
-    "report": "../../../experimental/validation-a2-20261103.md",
+    "report": "../../../experimental/validation.md",
     "scope": "scoped integration; not full operator acceptance"
   }
 }

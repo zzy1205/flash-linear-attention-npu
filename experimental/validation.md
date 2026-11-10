@@ -1,0 +1,56 @@
+# experimental 验证记录
+
+当前基线为 main `959d6b19`，当前真实实验算子只有 RWKV8（来源 PR #446）。本文件集中维护当前结论，不累计不同版本的通过数。历史完整命令和日志索引保留在 Git 历史；运行时的 JSON/日志放在 CI artifact。
+
+## 2026-11-10 精简与独立门禁
+
+变更范围：移除正式 GDR 内的实验串联、正式 wheel/共存/overlay 环境准备和多 profile 配置；合并实验 CI 入口与装载用例入口；构建来源指纹排除开发文档/测试；合并 CPU reference；独立实验 job/check。运行时逐次检查未修改。
+
+本轮在 A2 上从精简后的工作树重新构建并运行完整入口，不复用旧 wheel。
+环境：aarch64 / 910B，现有 `fla-npu-ci:9.1.0-910b` 镜像，CANN 9.1.0、Python 3.12.13、torch 2.7.1+cpu / torch_npu 2.7.1.post5，无 ATK/Kombu。
+
+| 检查 | 本轮结果 |
+| --- | --- |
+| 依赖预检 | 通过；缺 ATK 只 warning，后续构建正常执行 |
+| 实验 `.run`、独立安装、包/ABI 审计、wheel 和 host 装载 | 全部通过；算子集合只有 RWKV8 |
+| 真实 `.run` 拒绝正式包根、其 `opp` 和新建子目录 | 3/3，受保护目录不变 |
+| 装载隔离 | 22/22，无 FAIL/BLOCKED，受保护目录不变 |
+| NPU / CPU reference，默认队列 | 209/209；执行证据确认 `queue` |
+| NPU / CPU reference，强制 inline | 209/209；执行证据确认 `inline` |
+| 共用 reference 后的 PTA 原有边界/负例 | 13/13，使用同一新 wheel |
+| Linux CI 契约测试 | 424 项：423 通过、1 项备选 ATK 比较器测试按默认配置跳过 |
+| 实验 Python loader / CPU golden | 21/21、3/3 |
+| 正式阶段调度集成测试 / 独立状态发布器 | 通过；真实 A2 summary 通过新发布器的报告校验 |
+
+Linux 契约测试使用原生 Python 3.11 环境；NPU 完整入口及 PTA 使用上述无 ATK 的 CI 镜像。必要依赖失败注入、缺失/短报告、错误 head/run/attempt、旧 PR head、上传失败和正式/实验状态独立性均有契约测试。
+
+构建清单记录 `source_commit=f2dd8b93b59c2428f7c01a30bf14d49ecc70ba8b`、`source_dirty=true`，表示在主干同步提交上验证待提交的精简工作树；16 个算子/公共头输入文件哈希与提交输入一致。算子、launcher 和 Python runtime 本轮未改。证据保存在 A2 工作目录 `experimental-minimal-20261110-SrrP3X` 的 `result/` 及 `contracts.log`、`loader.log`、`stages.log`、`golden.log`、`pta.log`。
+
+| 证据/制品 | SHA256 |
+| --- | --- |
+| `result/summary.json` | `5e46e6854e4e55754d038a2a918a535f6c30c5a9e2e50d13232f6326cbee15a8` |
+| `fla_npu_experimental_linux-aarch64.run` | `75abdb4e7dc099bb7391e401aa2d47f056b51edc258109124580fdd256b1bf04` |
+| `flash_linear_attention_npu_experimental_a2-0.1.0.dev0+799b4432c42a-py3-none-linux_aarch64.whl` | `baa9ae98a36f72ecaeb2ed77d59f81439c0f83ea88846d1ded94440d31c2b78c` |
+
+本轮没有重跑 A5，也没有运行合入后的 GitHub 新 job；不得把本地入口通过等同于新 GitHub 门禁已经生效。
+
+## 已有参考证据（不计为本轮重跑）
+
+| 版本/日期 | 环境 | 已证实范围 |
+| --- | --- | --- |
+| `ee344941` / 2026-11-09 | A2，CANN 9.1.0 CI 镜像，torch 2.7.1 / torch_npu 2.7.1.post5，无 ATK/Kombu | 复用旧 wheel，直接 NPU / CPU reference 默认和 inline 各 209/209；依赖预检缺 ATK 只 warning |
+| 2026-11-09 | A2 原生，CANN 9.0.0，torch/torch_npu 2.12.0 | 旧 28 项矩阵及 quick 3×2，通过；Linux 契约测试 314 项，含备选 ATK 比较器对齐 |
+| 2026-11-06 | A2，910B2，CANN 9.0.0，ATK 26.9.8 | RWKV8-only `.run` / wheel，`--ops=all` 和单选构建；旧矩阵 28/28；原 ATK 默认/inline 各 3/3 |
+| 2026-11-03 | A5，CANN 9.2.0 | 当时版本的编译、包内容与 host 装载；未验证 A5 数值 |
+
+2026-11-06 卡 2 曾出现基础 `isfinite` 异常，在不加载 FLA 的全 1 张量上也可复现；当轮最终 ATK 数值结论来自卡 1。该异常不作为算子精度通过证据。
+
+旧 GitHub [NPU CI run](https://github.com/flashserve/flash-linear-attention-npu/actions/runs/42574483532) 中 A5 容器步骤成功，但 artifact 上传失败，A2 被取消；该次整体门禁未通过。
+
+## 通过标准与限制
+
+- 正式/实验集合分别构建，实验制品只含 RWKV8。
+- 实验 `.run` 拒绝正式包目录，wheel 使用独立身份；装载负例必须因指定原因被拒绝。
+- A2 默认与 inline 对拍，逐输出数值和实际库来源符合契约；A5 只计构建/host。
+- 新独立 GitHub job 需要工作流合入受保护目标分支后生效；分支保护同步添加实验 context。
+- 未完成 reverse、并发、多 stream、确定性、MSS、性能或 A3/A5 数值全量验收；不声明正式发布验收完成。

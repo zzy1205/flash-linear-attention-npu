@@ -8,7 +8,8 @@ import unittest
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from golden import fused_recurrent_rwkv8_golden
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_tests"))
+from rwkv8_reference import fused_recurrent_rwkv8_golden
 
 
 class CpuGoldenTest(unittest.TestCase):

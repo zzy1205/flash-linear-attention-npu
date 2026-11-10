@@ -103,6 +103,14 @@ GitHub 要求[手动运行 workflow 的用户具有仓库 write 权限](https://
 
 NPU CI 的 self-hosted runner、Docker 镜像、`--privileged`、触发方式和排障步骤见 [`Fla-npu仓CI部署教程.md`](Fla-npu仓CI部署教程.md)。
 
+### Experimental 独立门禁
+
+在原正式 6 个状态之外，完整 quick/full 请求同时运行独立 `experimental-npu` A2/A5 job，发布
+`NPU CI / Experimental / A2 runtime + A5 build`。实验 job 不依赖正式 wheel/GDR；A2 执行实验构建、安装/装载隔离和 CPU reference 精度，A5 只做构建/host。正式与实验有独立缓存、临时目录、artifact 和汇总，任何一套失败都不能由另一套成功代替。
+
+默认 pending、触发去重及分支保护配置同时包含实验状态。带 `ops=` 的正式定向诊断不运行实验门禁。
+`ci.yml` 与检查项定义合入受保护目标分支后，新 job 才能由该分支 workflow 调度；随后管理员使用下面的分支保护脚本同步新增 required context。合入前的真机直跑记录不能冒充 GitHub 新 job 已运行。
+
 ## 强行合入
 
 `weinachuan` 的强行合入权限需要在 GitHub 分支保护中配置 PR bypass allowance。仓库管理员可使用以下脚本应用 `main` 分支保护：
@@ -111,4 +119,4 @@ NPU CI 的 self-hosted runner、Docker 镜像、`--privileged`、触发方式和
 GITHUB_TOKEN=<admin-token> scripts/github/apply_branch_protection.sh main
 ```
 
-该 token 需要具备仓库 administration 写权限。脚本会要求上述 6 个 NPU CI 分项状态和 `CI 契约测试` 都通过，并配置 2 个 approval、Code Owners review、stale review dismiss、Admin 也必须遵守分支保护，以及仅 `weinachuan` 具备 bypass。
+该 token 需要具备仓库 administration 写权限。脚本会要求正式 6 个 NPU CI 分项、Experimental 独立状态和 `CI 契约测试` 都通过，并配置 2 个 approval、Code Owners review、stale review dismiss、Admin 也必须遵守分支保护，以及仅 `weinachuan` 具备 bypass。

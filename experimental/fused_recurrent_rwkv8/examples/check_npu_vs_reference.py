@@ -1,7 +1,7 @@
 """NPU dump vs Python CPU golden 本体对拍。
 
 读 RWKV8_DUMP_DIR 下 example 落盘的 case{ i}_*.bin（raw fp32）+ meta.txt，
-逐 case 调 tests/pta/golden.py 的 fused_recurrent_rwkv8_golden（精度真值锚点，
+逐 case 调 ../_tests/rwkv8_reference.py 的 fused_recurrent_rwkv8_golden（精度真值锚点，
 已与 fla 竞品 GPU fixture 对齐 ~1e-7）重算 golden，与 NPU 输出比 rel-RMSE。
 
 用法: python check_npu_vs_reference.py <dump_dir>
@@ -19,7 +19,8 @@ import torch
 OP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(OP_ROOT / "tests" / "pta"))
 
-from golden import fused_recurrent_rwkv8_golden as fused_recurrent_rwkv8_reference  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_tests"))
+from rwkv8_reference import fused_recurrent_rwkv8_golden as fused_recurrent_rwkv8_reference  # noqa: E402
 
 TOL = 0.002
 IO_NAMES = ["q", "w", "k", "v", "z", "b"]

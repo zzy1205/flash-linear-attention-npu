@@ -35,9 +35,14 @@ def _names(path: Path) -> list[str]:
     return names
 
 
-def _hashes(path: Path, root: Path) -> dict[str, str]:
+def _hashes(path: Path, root: Path, *, operator=False) -> dict[str, str]:
     result = {}
     for entry in sorted(path.rglob("*")):
+        relative = entry.relative_to(path)
+        # Provenance covers build inputs, not development docs/examples/tests.
+        # The CMake tree audit still rejects escaping links throughout the tree.
+        if operator and relative.parts[0] not in {"CMakeLists.txt", "op_host", "op_kernel", "adapter"}:
+            continue
         real = _inside(entry, root)
         if real.is_file() and "__pycache__" not in entry.parts:
             result[entry.relative_to(path).as_posix()] = hashlib.sha256(real.read_bytes()).hexdigest()
@@ -84,7 +89,7 @@ def create_manifest(repo: Path, selected_file: Path, resolved_file: Path,
             "op_type": op_types[0], "op_file": name,
             "proto_stem": definitions[0].stem.removesuffix("_def"),
             "aclnn_symbols": sorted(symbols), "supported_soc": sorted(set(supported)),
-            "source_sha256": _hashes(operator, experimental),
+            "source_sha256": _hashes(operator, experimental, operator=True),
         })
     common = experimental / "_common"
     required = [line.strip() for line in (common / "manifest.txt").read_text(encoding="utf-8").splitlines()

@@ -100,7 +100,7 @@ class ExperimentalBuildContractTest(unittest.TestCase):
     def test_framework_common_and_registration_changes_rebuild_experimental(self):
         for path in ("cmake/func.cmake", "experimental/_common/manifest.txt",
                      "common/tiling.cpp", "setup.py", "torch_custom/registry.cpp",
-                     "ci/run_experimental_validation.sh", ".github/workflows/ci.yml"):
+                     "ci/run_experimental_ci.py", ".github/workflows/ci.yml"):
             with self.subTest(path=path):
                 self.assertTrue(self._changes(path + "\n").full_rebuild)
 
@@ -178,7 +178,7 @@ class ExperimentalBuildContractTest(unittest.TestCase):
             check=False,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Use ci/run_experimental_validation.sh", result.stderr)
+        self.assertIn("Use ci/run_experimental_ci.py", result.stderr)
 
 
 if __name__ == "__main__":

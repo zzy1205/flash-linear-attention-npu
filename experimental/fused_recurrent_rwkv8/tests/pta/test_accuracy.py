@@ -1,6 +1,6 @@
 """fused_recurrent_rwkv8 (WKV7) PTA 精度测试。
 
-NPU 输出对拍 CPU 金标（golden.py），用例取自上级目录 cases.py
+NPU 输出对拍 共享 CPU reference 的 FP32 兼容入口，用例取自上级目录 cases.py
 （正例全跑 + 负例校验拒绝路径）。plain script，非 pytest：
 
     python test_accuracy.py            # 默认 npu:0
@@ -19,7 +19,8 @@ import torch_npu  # noqa: F401  注册 NPU 后端
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from golden import fused_recurrent_rwkv8_golden
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_tests"))
+from rwkv8_reference import fused_recurrent_rwkv8_golden
 from utils import compare_rel_rmse
 from cases import CASES, REL_RMSE_THRESHOLD
 

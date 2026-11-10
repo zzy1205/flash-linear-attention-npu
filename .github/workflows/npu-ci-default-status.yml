@@ -156,7 +156,7 @@ jobs:
             const isDefaultProfile = checkContexts.length === defaultContexts.length &&
               checkContexts.every((statusContext, index) => statusContext === defaultContexts[index]);
             const requirementLine = isDefaultProfile
-              ? '- 合入要求：当前 commit 必须通过 6 个 `NPU CI / A2+A5 / 01..06` 分项状态'
+              ? '- 合入要求：当前 commit 必须通过正式 6 项和 Experimental 独立门禁'
               : `- 合入要求：当前 commit 必须通过 ${checkContexts.length} 个状态：${checkContexts.map((statusContext) => `\`${statusContext}\``).join('、')}`;
             const body = [
               marker,
@@ -244,7 +244,11 @@ jobs:
                     definition.required.some((item) => typeof item?.context !== 'string' || !item.context.startsWith('NPU CI / '))) {
                   throw new Error('NPU CI required context 列表无效。');
                 }
-                return definition.required.map((item) => item.context);
+                const entries = [...definition.required, ...(definition.experimental ? [definition.experimental] : [])];
+                if (entries.some((item) => typeof item?.context !== 'string' || !item.context.startsWith('NPU CI / '))) {
+                  throw new Error('Invalid CI context definition');
+                }
+                return entries.map((item) => item.context);
               } catch (error) {
                 if (!allowLegacy || error.status !== 404) throw error;
               }

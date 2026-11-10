@@ -32,7 +32,7 @@ class AccuracyContract(unittest.TestCase):
                  ROOT / "tests/atk/fused_recurrent_rwkv8/executor_fused_recurrent_rwkv8.py"]
         trees = [{node.name: ast.dump(node) for node in ast.parse(path.read_text(encoding="utf-8")).body
                   if isinstance(node, (ast.FunctionDef, ast.ClassDef))} for path in paths]
-        for name in ("_rwkv8_inputs", "_Rwkv8Result", "_wkv7_decay", "fused_recurrent_rwkv8_reference"):
+        for name in ("_rwkv8_inputs", "_Rwkv8Result", "_wkv7_decay"):
             self.assertEqual(trees[0][name], trees[1][name], name)
 
     def test_quick_and_full_use_the_original_catalog(self):
@@ -60,6 +60,23 @@ class AccuracyMath(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.reference = load("reference", ROOT / "experimental/_tests/rwkv8_reference.py")
+
+    def test_shared_reference_preserves_atk_fp32_and_fp64_results(self):
+        from typing import Any, NamedTuple, Optional
+        source = ROOT / "tests/atk/fused_recurrent_rwkv8/executor_fused_recurrent_rwkv8.py"
+        names = {"_Rwkv8Result", "_wkv7_decay", "fused_recurrent_rwkv8_reference"}
+        nodes = [node for node in ast.parse(source.read_text(encoding="utf-8")).body
+                 if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names]
+        namespace = dict(torch=torch, Any=Any, NamedTuple=NamedTuple, Optional=Optional)
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)
+        for dtype in ("fp16", "bf16", "fp32"):
+            for high in (False, True):
+                inputs = self.reference._rwkv8_inputs(dict(dtype=dtype, B=1, H=2, T=7, K=8, V=16,
+                    initial_state=True, chunk_len=3, output_chunk_state=True, output_sa=True), torch.device("cpu"), high)
+                actual = self.reference.fused_recurrent_rwkv8_reference(**inputs)
+                expected = namespace["fused_recurrent_rwkv8_reference"](**inputs)
+                for a, e in zip(actual, expected):
+                    self.assertTrue(torch.equal(a, e), (dtype, high))
 
     def test_golden_and_dut_receive_identical_quantized_inputs(self):
         for dtype in ("fp16", "bf16", "fp32"):

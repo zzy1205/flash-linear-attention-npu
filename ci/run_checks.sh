@@ -11,8 +11,8 @@
 
 set -euo pipefail
 
-if [[ "${CI_EXPERIMENTAL:-false}" == "true" ]]; then
-    echo "[CI][ERROR] Use ci/run_experimental_validation.sh for isolated experimental validation." >&2
+if [[ "${CI_SUITE:-formal}" != formal || "${CI_EXPERIMENTAL:-false}" == true ]]; then
+    echo "[CI][ERROR] Use ci/run_experimental_ci.py for isolated experimental validation." >&2
     exit 2
 fi
 
@@ -651,8 +651,6 @@ PY
 }
 
 check_environment_contracts() {
-    FLA_NPU_DISABLE_PTH=1 python3 ci/check_experimental_environment.py --stage-report "$stage_report_file"
-    FLA_NPU_DISABLE_PTH=1 check_example_python_deps
     python3 tests/test_wheel_environment.py -b
     python3 torch_custom/fla_npu/tools/stable_coverage.py --strict
     python3 torch_custom/fla_npu/tools/op_abi_parity.py
@@ -771,15 +769,6 @@ check_wheel_install_layouts() {
     if [[ "${CI_RUN_WHEEL_API_CHECK:-false}" == "true" ]]; then
         build_and_check_wheel_api
     fi
-}
-
-# Keep the existing required status names: the trusted main workflow already
-# invokes this merged-PR script and uploads its stage report.
-run_gdr_and_experimental_st() {
-    run_gdr_example_st
-    FLA_NPU_DISABLE_PTH=1 python3 ci/run_experimental_ci.py --stage-report "$stage_report_file"
-    # Fresh formal processes must still work after experimental installation/loading.
-    run_gdr_example_st
 }
 
 declare -A ci_stage_status=()
@@ -953,9 +942,9 @@ if [[ "$requested_stage" != "all" || "$change_scope" == "tests-only" ]]; then
 fi
 run_pipeline_stage \
     gdr-example-st \
-    "GDR Example/ST, experimental validation, and formal regression" \
+    "run all enabled GDR Example/ST accuracy cases" \
     "$gdr_example_enabled" \
-    run_gdr_and_experimental_st
+    run_gdr_example_st
 
 stage_report_status=0
 python3 ci/manage_npu_ci_stage_report.py --output "$stage_report_file" finalize || stage_report_status=$?

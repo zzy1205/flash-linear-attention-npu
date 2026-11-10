@@ -66,18 +66,11 @@ def check():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--stage-report", type=Path)
     args = parser.parse_args()
     result = check()
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    if args.stage_report:
-        report = json.loads(args.stage_report.read_text(encoding="utf-8"))
-        report["experimental_dependencies"] = result
-        temp = args.stage_report.with_suffix(".tmp")
-        temp.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        temp.replace(args.stage_report)
     return 0 if result["status"] == "success" else 1
 
 

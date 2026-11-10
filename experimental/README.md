@@ -1,93 +1,75 @@
-# experimental 实验算子目录
+# experimental 实验算子
 
-本目录存放尚未完成转测、暂不进入正式商用版本，但需要在仓内持续开发和共同维护的算子。进入本目录不表示算子已经达到正式发布要求。
+用于仓内共同开发、尚未进入正式算子集合的实现。当前只包含从 [PR #446](https://github.com/flashserve/flash-linear-attention-npu/pull/446) 迁入的 `fused_recurrent_rwkv8`。
 
-- 目标设计：[experimental 构建适配设计.md](../docs/architecture/experimental%20构建适配设计.md)
-- 验证记录：[A5 main 构建适配](validation-20261103.md)、[A2 功能与隔离](validation-a2-20261103.md)
-- 当前主干同步：[2026-11-04 最小适配与回归](validation-main-20261104.md)
-- 当前算子范围：[2026-11-06 仅保留 RWKV8](validation-rwkv-only-20261106.md)
-- 用例与脚本：[A2 功能与隔离验证方案](_tests/a2_isolation/README.md)
-- 验收要求：[Issue #931](https://github.com/flashserve/flash-linear-attention-npu/issues/931)
+- [构建、安装与装载设计](../docs/architecture/experimental%20构建适配设计.md)
+- [当前验证记录](validation.md)
+- [RWKV8 接口和实现](fused_recurrent_rwkv8/README.md)
 
-## 目录约定
+## 边界
 
-`experimental/` 后的第一个子目录名就是算子名，算子目录必须包含根层 `CMakeLists.txt`：
+1. 正式构建只包含正式算子，`--experimental` 只包含实验算子及其实验依赖。
+2. 实验 `.run`、wheel、vendor、Python 包、launcher 和 dispatcher 使用独立身份；不得覆盖正式 wheel 或 OPP。
+3. 实验 CI 独立构建、验证和发布状态，不依赖正式构建先完成。
 
-```text
-experimental/
-├── _common/
-│   └── manifest.txt
-├── _framework/  # adapter 注册生成、独立 launcher / wheel 构建
-├── _python/
-│   └── fla_npu_experimental/
-├── fused_recurrent_rwkv8/
-│   ├── CMakeLists.txt
-│   ├── op_host/
-│   └── op_kernel/
-└── <another_operator>/
-    ├── CMakeLists.txt
-    ├── op_host/
-    └── op_kernel/
-```
+experimental 不支持 overlay、运行中替换 OPP 或同进程混用正式/实验算子。使用独立 Python 环境和新进程；不维护同环境共存、pip 安装顺序或正式 overlay 的兼容矩阵。不同包名和目录的防覆盖措施保留。
 
-名称以 `_` 开头的一级目录是框架保留目录，不作为算子发现。算子名在实验树内必须全局唯一；根层 CMake 中的依赖只填写其他实验算子名，不填写仓库路径。实验算子的直接依赖、传递依赖和公共代码必须全部位于 `experimental/` 下，形成可独立构建的完整闭包。
+## 构建与安装
 
-## 严格隔离约束
-
-1. 未启用 experimental 时只能发现、编译和打包稳定算子。
-2. 启用 experimental 后只能发现、编译和打包实验算子。
-3. 实验依赖缺失时构建必须明确失败，不得回退到稳定树或静默跳过。
-4. `experimental/_common` 不完整时构建必须明确失败，不得从稳定 common 补齐。
-5. 实验产物只包含所选实验算子及其实验依赖，并使用独立制品标识。
-6. 实验制品不得进入正式 Release，也不能作为正式商用能力使用。
-
-## 构建方式
-
-支持 custom OPP `.run` 与独立开发 wheel，默认关闭 experimental：
+先初始化 CANN 和匹配的 Python 环境：
 
 ```bash
-# 构建一个实验算子及其完整实验依赖闭包
-bash build.sh --pkg --experimental --soc=ascend950 --ops=fused_recurrent_rwkv8 -j4
-
-# 构建实验树中的全部算子
-bash build.sh --pkg --experimental --soc=ascend950 -j4
-```
-
-当前仅接入从 [PR #446](https://github.com/flashserve/flash-linear-attention-npu/pull/446) 迁入的 `fused_recurrent_rwkv8`，直接用于框架功能和隔离验证。多算子规则使用临时测试夹具覆盖。RWKV8 保留 `ascend910b` 配置并新增 `ascend950` 编译配置；配置存在不代表该平台已经通过运行与精度验收。
-
-实验模式使用 `fla_npu_experimental_linux-<arch>.run` 和独立 vendor `fla_npu_experimental_transformer`。同一 CMake 构建目录不能切换稳定/实验模式；普通 `build.sh` 会重新创建构建目录。构建检查完整依赖闭包、循环、越界符号链接、显式稳定源/头文件路径与实验 common 必需文件，并记录所选算子、依赖、SoC、源码身份和文件摘要。可执行 CMake 仍属于受信任源码，检查器不是任意 CMake 的安全沙箱。
-
-## 独立安装与 Python
-
-只接受显式、绝对、空或尚未创建的安装目录，且父目录必须存在：
-
-```bash
+export FLA_NPU_DISABLE_PTH=1
+# 一个算子；多个算子可用 --ops=op1,op2；省略 --ops 或 --ops=all 编全部实验算子。
+bash build.sh --pkg --experimental --soc=ascend910b --ops=fused_recurrent_rwkv8 -j4
 bash build_out/fla_npu_experimental_linux-$(uname -m).run \
     --install-path=/absolute/empty-experimental-opp --quiet
+python experimental/_framework/build.py wheel \
+    --manifest build/experimental-build-manifest.json \
+    --install-root /absolute/empty-experimental-opp --output /absolute/development-wheels
+python -m pip install --no-deps /absolute/development-wheels/*.whl
 ```
 
-安装器拒绝默认安装、稳定 wheel/OPP、非空目录、overlay 参数以及越界链接。当前稳定 wheel 入口拒绝 `--experimental`；实验 Python 使用独立命名空间 `fla_npu_experimental`，不写入稳定 `fla_npu` 或 `torch.ops.npu`。新进程必须显式启用实验 OPP，使用方式见 [_python/README.md](_python/README.md)。独立开发 wheel 通过 `experimental/_framework/build.py wheel` 构建，不进入正式发布流程。
+`.run` 仅接受显式绝对空目录或父目录存在的新目录；拒绝正式 wheel/OPP、默认覆盖安装和 overlay。wheel 包名为 `flash-linear-attention-npu-experimental-a2/a3/a5`，Python 包为 `fla_npu_experimental`，不写正式 `fla_npu`，不安装自动启动 `.pth`。开发 wheel 不进入正式发布流程。
 
-## 当前验证范围
+算子放在 `experimental/<op>/`，必须有 `CMakeLists.txt`、`op_host/`、`op_kernel/` 和 wheel 所需 adapter。`_` 开头的一级目录是框架目录。实验依赖必须闭合在实验树内；多算子发现和依赖规则有临时夹具测试。当前真实算子只有 RWKV8，新增算子需同步扩充 CI 精度覆盖。
 
-初始化 CANN/conda 后执行：
+构建参数的兼容目标、当前限制与证据见[设计 §3.1](../docs/architecture/experimental%20构建适配设计.md#31-buildsh-参数兼容边界)。不把已有构建选项全部视为已实测。
+
+## 运行
+
+在安装实验 wheel 的环境中，先初始化 CANN，再启用 wheel 内的实验 vendor：
 
 ```bash
-CI_SOC=ascend950 CI_EXPERIMENTAL_OPS=fused_recurrent_rwkv8 CI_JOBS=4 \
-    bash ci/run_experimental_validation.sh
+export FLA_NPU_DISABLE_PTH=1
+source /absolute/site-packages/fla_npu_experimental/opp/vendors/fla_npu_experimental_transformer/bin/set_env.bash
+python - <<'PY'
+from fla_npu_experimental import fused_recurrent_rwkv8  # 先于 torch_npu/acl
+import torch
+import torch_npu
+# 构造目标设备上的输入，再调用 wrapper。
+PY
 ```
 
-该入口执行隔离契约测试、真实编译打包、空目录安装、双清单审计、独立 wheel 构建及 host-only 加载检查，输出 `build_out/experimental-package-audit.json` 和 `experimental-load-audit.json`。它不执行 NPU；历史 A2 功能与隔离结果见 [A2 验证记录](validation-a2-20261103.md)，其中 RWKV8 209 条精度通过，28 项装载隔离通过。历史制品包含现已移除的样例，不能代替清理后的制品验证。
+实际装入 `fla_npu_experimental/libfla_npu_experimental_stable.so` 和内嵌 vendor 的 `op_api/lib/libcust_opapi.so`，注册 `torch.ops.fla_npu_experimental_stable`。`FLA_NPU_EXPERIMENTAL_OPP_PATH` 必须指向本 wheel 的 `opp`；不能借外部 `.run` 更新内嵌 OPP。更新时重建匹配 wheel，重新启动进程。
 
-GitHub NPU CI 已通过 `run_checks.sh` 的测试阶段调用 `ci/run_experimental_ci.py`：先执行正式
-GDR，再构建实验全量制品；A2 自动准备独立环境、执行 28 项装载隔离和 RWKV8 NPU / CPU reference 直接对拍
-（quick 默认/inline 各 3 条，full 各 209 条）；最后再次执行正式 GDR。A5 只做实验构建和 host
-装载，runtime 明确记录 skipped。任一失败阻断既有 CI 状态，分项结果嵌入现有 stage artifact。
-依赖预检在正式构建前执行；必要 Python 依赖缺失立即失败，缺 ATK 只 warning。默认 CI 无须 ATK，
-备选 ATK 工程仍可手工复验（ATK 26.9.8 + `kombu==5.6.2`）。对拍复用原 JSON、FP64 CPU 标杆
-和原混合容差阈值；每个输出的误差、阈值和实际库来源写入报告。
-完整调度、依赖和覆盖边界见 [设计文档 §7.1](../docs/architecture/experimental%20构建适配设计.md#71-github-npu-ci-调度与失败边界)。
-本次 A2 构建、装载、精度及 CI 调度实测见 [2026-11-09 验证记录](validation-ci-20261109.md)。
-后续默认改为独立 CPU reference 对拍，无 ATK 镜像实测及当前验证边界见
-[独立对拍验证记录](validation-reference-ci-20261109.md)。
-此接入不表示 reverse、所有 stream/并发、确定性、MSS、性能等完整验收已经完成。
+运行时保留包身份、ABI、算子集合、Python/launcher 指纹、路径和进程混用校验，以及加载后的环境/文件变更检查。RWKV8 仍返回 `(o, s, sa)`，`chunk_len` 范围为 `[1,4294967295]`。
+
+## CI 与复现
+
+```bash
+# A2 独立全链路；输出目录必须尚不存在。
+FLA_NPU_DISABLE_PTH=1 CI_SOC=ascend910b CI_MODE=quick CI_CONTAINER_DEVICE=0 \
+    python3 ci/run_experimental_ci.py --output /absolute/new-results
+# 只做构建、安装、ABI 和 host 装载，不声明 NPU 精度通过。
+FLA_NPU_DISABLE_PTH=1 CI_SOC=ascend950 \
+    python3 ci/run_experimental_ci.py --build-only --output /absolute/new-build-results
+# 使用现有 CI 镜像、挂载和设备锁。
+CI_SUITE=experimental CI_SOC=ascend910b CI_MODE=full bash ci/run_ci_container.sh
+```
+
+统一入口先检查依赖，缺必要依赖立即失败，缺 ATK 只 warning。随后只构建实验 `.run` 和 wheel，在一个隔离环境中安装并 host 装载。A2 再验证 3 个受保护安装路径和 22 项装载隔离，并用 NPU 输出直接对拍 CPU reference；quick 默认/inline 各 3 条，full 各 209 条。A5 只运行构建和 host 检查。
+
+完整结果保存在输出目录的 `summary.json`；分阶段日志、数值明细和调用后的库来源证据供定位。GitHub 以独立 `NPU CI / Experimental / A2 runtime + A5 build` 状态发布结果。正式 GDR 不再串接实验验证，两个任务没有构建先后依赖。
+
+[ATK 工程](../tests/atk/fused_recurrent_rwkv8/README.md) 保留为备选，默认 CI 不安装、不调用 ATK。PTA/dump 复用同一 CPU reference，保留原 FP32/relative-RMSE 诊断口径和独有边界/负例；正式实验 CI 使用 FP64→FP32 与原混合容差。reverse、并发、确定性、MSS、性能以及 A5 数值不属于本门禁已覆盖范围。

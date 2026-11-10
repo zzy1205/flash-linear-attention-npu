@@ -1,6 +1,6 @@
-"""ATK-free RWKV8 inputs/reference, kept identical to the self-contained ATK executor.
+"""ATK-free RWKV8 inputs/reference shared by CI, PTA and dump comparison.
 
-ci/tests/test_experimental_accuracy.py checks AST parity with that executor.
+Contract tests compare inputs and FP32/FP64 results with the self-contained ATK executor.
 The CI golden uses dtype-quantized inputs and FP64 accumulation, then FP32 outputs.
 """
 from __future__ import annotations
@@ -61,7 +61,7 @@ def _rwkv8_inputs(spec: dict[str, Any], device: torch.device, high_precision: bo
     }
 
 
-# ---- CPU 标杆（内嵌拷贝，源头见 tests/pta/golden.py）----
+# CPU reference: BlinkDL/RWKV-LM @ 9521024, RWKV-v8/cuda/wkv7_cuda.cu forward_kernel.
 
 class _Rwkv8Result(NamedTuple):
     o: torch.Tensor
@@ -86,6 +86,7 @@ def fused_recurrent_rwkv8_reference(
     output_chunk_state: bool = False,
     output_sa: bool = False,
     chunk_len: int = 16,
+    reverse: bool = False,
 ) -> _Rwkv8Result:
     """逐 token 递推参考实现（einsum 版）。输入 fp64 时全程 fp64 累加，
     否则 fp32 累加；o 回投到输入 dtype，s/sa 为计算精度。"""
@@ -104,7 +105,8 @@ def fused_recurrent_rwkv8_reference(
     o = torch.empty(B, H, T, V, dtype=calc_dtype)
     sa_out = torch.empty(B, H, T, V, dtype=calc_dtype) if output_sa else None
     s_snaps = []
-    for t in range(T):
+    for i in range(T):
+        t = T - 1 - i if reverse else i
         sa = torch.einsum('bhij,bhj->bhi', state, z[:, :, t])
         if output_sa:
             sa_out[:, :, t] = sa
@@ -179,3 +181,16 @@ def check_outputs(outputs, golden, inputs):
             result[name] = {"shape": list(output.shape), "dtype": str(output.dtype),
                             **compare_output(output, reference)}
     return result
+
+
+def fused_recurrent_rwkv8_golden(q, w, k, v, z, b, scale=1.0, initial_state=None,
+                                 reverse=False, output_chunk_state=False, output_sa=False, chunk_len=16):
+    """PR #446 PTA/dump compatibility: retain FP32 accumulation and original o dtype."""
+    assert q.shape == w.shape == k.shape == z.shape == b.shape, "k-side shape mismatch"
+    assert q.ndim == 4, "expect q (B,H,T,K)"
+    assert v.ndim == 4 and v.shape[:3] == q.shape[:3], "v shape mismatch"
+    result = fused_recurrent_rwkv8_reference(
+        *(x.float() for x in (q, w, k, v, z, b)), scale=scale,
+        initial_state=None if initial_state is None else initial_state.float(),
+        reverse=reverse, output_chunk_state=output_chunk_state, output_sa=output_sa, chunk_len=chunk_len)
+    return result._replace(o=result.o.to(q.dtype))

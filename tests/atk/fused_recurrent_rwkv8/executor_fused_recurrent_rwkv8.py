@@ -2,7 +2,7 @@
 
 输入生成、CPU 标杆、run_cpu、run_npu 和 FunctionApi 都放在本算子目录中。
 CPU 标杆内嵌在本文件中（ATK 规范：executor 自包含，不跨目录 import 金标）；
-它与 experimental/fused_recurrent_rwkv8/tests/pta/golden.py 是同一份
+它与 experimental/_tests/rwkv8_reference.py 是同一份
 逻辑的两份拷贝——修改金标算法时两处必须同步。
 CI 独立副本 experimental/_tests/rwkv8_reference.py 也须同步，契约测试检查函数 AST 一致性。
 
@@ -90,7 +90,7 @@ def _rwkv8_inputs(spec: dict[str, Any], device: torch.device, high_precision: bo
     }
 
 
-# ---- CPU 标杆（内嵌拷贝，源头见 tests/pta/golden.py）----
+# ---- CPU 标杆（内嵌拷贝，源头见 experimental/_tests/rwkv8_reference.py）----
 
 class _Rwkv8Result(NamedTuple):
     o: torch.Tensor

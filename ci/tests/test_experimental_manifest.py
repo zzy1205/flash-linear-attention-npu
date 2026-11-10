@@ -30,6 +30,17 @@ def write_json(path: Path, data):
 
 
 class ExperimentalManifestTest(unittest.TestCase):
+    def test_provenance_excludes_development_files_but_tracks_build_inputs(self):
+        before = self.data["operators"][0]["source_sha256"]
+        for name in ("README.md", "docs/design.md", "tests/case.py", "examples/sample.cpp"):
+            write(self.op / name, "not a build input")
+        create = lambda: manifest.create_manifest(self.repo, self.selected, self.resolved, "ascend950", "arch35;arch22")
+        self.assertEqual(before, create()["operators"][0]["source_sha256"])
+        write(self.op / "adapter/stable_probe.cpp", "// build input")
+        self.assertIn("adapter/stable_probe.cpp", create()["operators"][0]["source_sha256"])
+        write(self.op / "op_kernel/probe.cpp", "// changed build input")
+        self.assertNotEqual(before["op_kernel/probe.cpp"], create()["operators"][0]["source_sha256"]["op_kernel/probe.cpp"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
