@@ -3,6 +3,7 @@
  * \brief
  */
 #include "fused_recurrent_rwkv8_tiling.h"
+#include "fused_recurrent_rwkv8_limits.h"
 
 #include "tiling_base/tiling_templates_registry.h"
 #include "register/op_def_registry.h"
@@ -239,11 +240,21 @@ ge::graphStatus FusedRecurrentRwkv8Tiling::AnalyzeShapes()
                         MAX_V_DIM, dimV),
                 return ge::GRAPH_FAILED);
 
-    // UB 预算：state 单个 K×V fp32 buffer + K 侧 8 个 + V 侧 3 个 fp32 向量 buffer
-    // + 低精度路径 staging（K 侧 5 个 + V 侧 2 个，按最坏 2 字节/dtype 估算；fp32 路径无 staging）
-    uint64_t ubNeed = 1UL * dimK * dimV * sizeof(float) +
-                      (8UL * dimK + 3UL * dimV) * sizeof(float) +
-                      (5UL * dimK + 2UL * dimV) * sizeof(uint16_t);
+    // Match every InitBuffer in the kernel, including power-of-two padded
+    // state/mat rows and the Brcb scratch. Each allocation is 32-byte aligned.
+    uint64_t paddedK = 8;
+    while (paddedK < static_cast<uint64_t>(dimK)) {
+        paddedK <<= 1;
+    }
+    const auto alignUb = [](uint64_t bytes) { return (bytes + 31UL) / 32UL * 32UL; };
+    uint64_t ubNeed = 2UL * alignUb(paddedK * dimV * sizeof(float)) +
+                      alignUb(paddedK * 8UL * sizeof(float)) +
+                      8UL * alignUb(dimK * sizeof(float)) +
+                      2UL * alignUb(dimV * sizeof(float));
+    if (context_->GetInputDesc(Q_INDEX)->GetDataType() != ge::DT_FLOAT) {
+        ubNeed += 5UL * alignUb(dimK * sizeof(uint16_t)) +
+                  2UL * alignUb(dimV * sizeof(uint16_t));
+    }
     OP_CHECK_IF(compileInfo_.ubSize > 0 && ubNeed > compileInfo_.ubSize,
                 OP_LOGE(context_->GetNodeName(), "UB not enough: need %lu bytes, have %lu bytes",
                         ubNeed, compileInfo_.ubSize),
@@ -331,8 +342,8 @@ ge::graphStatus FusedRecurrentRwkv8Tiling::GetFlagAttrs()
     }
     const int64_t *chunkLenPtr = attrs->GetAttrPointer<int64_t>(ATTR_CHUNK_LEN_INDEX);
     if (chunkLenPtr != nullptr) {
-        OP_CHECK_IF(*chunkLenPtr < 1,
-                    OP_LOGE(context_->GetNodeName(), "chunk_len must be >= 1, got %ld", *chunkLenPtr),
+        OP_CHECK_IF(!FusedRecurrentRwkv8::IsValidChunkLen(*chunkLenPtr),
+                    OP_LOGE(context_->GetNodeName(), "chunk_len must be in [1, 4294967295], got %ld", *chunkLenPtr),
                     return ge::GRAPH_FAILED);
         tilingData_.chunkLen = static_cast<uint32_t>(*chunkLenPtr);
     }

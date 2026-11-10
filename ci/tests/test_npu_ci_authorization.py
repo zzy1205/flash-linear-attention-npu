@@ -340,7 +340,7 @@ const core = {notice:(payload) => record('notice',payload),warning:(payload) => 
     def test_default_status_fails_ci_changes_from_non_admin_author(self):
         result = self.run_entry("default", files=[".github/scripts/ci.js"])
         statuses = self.records(result, "status")
-        self.assertEqual(len(statuses), 6)
+        self.assertEqual(len(statuses), 7)
         self.assertTrue(all(status["state"] == "failure" for status in statuses))
 
     def test_title_edit_keeps_existing_status(self):
@@ -437,7 +437,7 @@ const core = {notice:(payload) => record('notice',payload),warning:(payload) => 
             with self.subTest(options=options):
                 result = self.run_entry("prepare", files=["ci/run.sh"], **options)
                 self.assertTrue(self.records(result, "failed"))
-                self.assertEqual([item["state"] for item in self.records(result, "status")], ["failure"] * 6)
+                self.assertEqual([item["state"] for item in self.records(result, "status")], ["failure"] * 7)
 
     def test_default_status_preserves_admin_author_execution_but_rejects_non_admin_author(self):
         prepared = self.run_entry("prepare", files=["ci/run_checks.sh"], permissions={"ci-author":"admin"})
@@ -445,7 +445,7 @@ const core = {notice:(payload) => record('notice',payload),warning:(payload) => 
         allowed = self.run_entry("default", files=["ci/run_checks.sh"], statuses=statuses, permissions={"ci-author":"admin"})
         self.assertEqual(self.records(allowed, "status"), [])
         rejected = self.run_entry("default", files=["ci/run_checks.sh"], statuses=statuses)
-        self.assertEqual([status["state"] for status in self.records(rejected, "status")], ["failure"] * 6)
+        self.assertEqual([status["state"] for status in self.records(rejected, "status")], ["failure"] * 7)
 
 if __name__ == "__main__":
     unittest.main()
