@@ -12,6 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/npu-ci-default-status.yml"
 DEFINITION = ROOT / ".github/scripts/npu_ci_checks.json"
+PROFILE_COUNT = 6 + int("experimental" in json.loads(DEFINITION.read_text(encoding="utf-8")))
 
 
 class DefaultStatusFailureTests(unittest.TestCase):
@@ -23,7 +24,7 @@ class DefaultStatusFailureTests(unittest.TestCase):
 const fs = require('fs');
 const settings = JSON.parse(process.env.TEST_OPTIONS);
 const definition = JSON.parse(fs.readFileSync(process.env.TEST_DEFINITION, 'utf8'));
-const contexts = definition.required.map(item => item.context);
+const contexts = [...definition.required, ...(definition.experimental ? [definition.experimental] : [])].map(item => item.context);
 const records = [];
 const record = (kind, payload) => records.push({kind, payload});
 const eventPr = {number:527,state:'open',draft:false,changed_files:1,user:{login:settings.author || 'contributor'},
@@ -168,14 +169,14 @@ const core = {notice:message => record('notice',message),warning:message => reco
     def test_ci_changes_from_admin_author_need_no_confirmation(self):
         records = self.run_workflow(file="ci/run_checks.sh", author="pr-admin",
                                     permissions={"pr-admin": "admin"}, history=[])
-        self.assertEqual([item["state"] for item in self.statuses(records)], ["pending"] * 6)
+        self.assertEqual([item["state"] for item in self.statuses(records)], ["pending"] * PROFILE_COUNT)
         self.assertEqual([item["payload"] for item in records if item["kind"] == "permission"], ["pr-admin"])
         self.assertFalse(any(item["kind"] in ("normal_error", "fallback_error") for item in records))
 
     def test_non_admin_ci_author_cannot_keep_old_success(self):
         records = self.run_workflow(file=".github/workflows/ci.yml", author="contributor",
                                     permissions={"ci-admin": "admin"})
-        self.assertEqual([item["state"] for item in self.statuses(records)], ["failure"] * 6)
+        self.assertEqual([item["state"] for item in self.statuses(records)], ["failure"] * PROFILE_COUNT)
         body = next(item["payload"]["body"] for item in records if item["kind"] == "comment")
         self.assertIn("作者", body)
         self.assertIn("Admin", body)
@@ -188,13 +189,13 @@ const core = {notice:message => record('notice',message),warning:message => reco
 
     def test_author_permission_read_failure_blocks_ci_changes(self):
         records = self.run_workflow(file="ci/run_checks.sh", permission_error=True)
-        self.assertEqual([item["state"] for item in self.statuses(records)], ["failure"] * 6)
+        self.assertEqual([item["state"] for item in self.statuses(records)], ["failure"] * PROFILE_COUNT)
         body = next(item["payload"]["body"] for item in records if item["kind"] == "comment")
         self.assertIn("permission unavailable", body)
 
     def test_non_ci_change_does_not_read_author_permission(self):
         records = self.run_workflow(permission_error=True, history=[])
-        self.assertEqual([item["state"] for item in self.statuses(records)], ["pending"] * 6)
+        self.assertEqual([item["state"] for item in self.statuses(records)], ["pending"] * PROFILE_COUNT)
         self.assertFalse(any(item["kind"] == "permission" for item in records))
 
 

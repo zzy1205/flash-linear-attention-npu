@@ -1333,7 +1333,7 @@ exec bash "$CI_TEST_PREPARE_SCRIPT" -s "$CI_TEST_SOURCE" -b "$CI_TEST_BUILD"
         payload = record["payload"]
         self.assertEqual(payload["required_status_checks"], {
             "strict": True,
-            "contexts": [item["context"] for item in profile["required"]] + [profile["contract_test"]],
+            "contexts": [item["context"] for item in profile["required"]] + ([profile["experimental"]["context"]] if profile.get("experimental") else []) + [profile["contract_test"]],
         })
         self.assertNotIn(profile["diagnostic"]["context"], payload["required_status_checks"]["contexts"])
         self.assertEqual(payload["required_pull_request_reviews"], {

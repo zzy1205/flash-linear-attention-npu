@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / ".github/scripts/npu_ci_authorization.js"
+PROFILE_COUNT = 6 + int("experimental" in json.loads((ROOT / ".github/scripts/npu_ci_checks.json").read_text(encoding="utf-8")))
 
 
 def workflow_script(filename, job, step_id=None):
@@ -383,7 +384,7 @@ const core = {notice:(payload) => record('notice',payload),warning:(payload) => 
     def test_default_status_fails_ci_changes_from_non_admin_author(self):
         result = self.run_entry("default", files=[".github/scripts/ci.js"])
         statuses = self.records(result, "status")
-        self.assertEqual(len(statuses), 6)
+        self.assertEqual(len(statuses), PROFILE_COUNT)
         self.assertTrue(all(status["state"] == "failure" for status in statuses))
 
     def test_title_edit_keeps_existing_status(self):
@@ -488,7 +489,7 @@ const core = {notice:(payload) => record('notice',payload),warning:(payload) => 
         allowed = self.run_entry("default", files=["ci/run_checks.sh"], statuses=statuses, permissions={"ci-author":"admin"})
         self.assertEqual(self.records(allowed, "status"), [])
         rejected = self.run_entry("default", files=["ci/run_checks.sh"], statuses=statuses)
-        self.assertEqual([status["state"] for status in self.records(rejected, "status")], ["failure"] * 6)
+        self.assertEqual([status["state"] for status in self.records(rejected, "status")], ["failure"] * PROFILE_COUNT)
 
 if __name__ == "__main__":
     unittest.main()
